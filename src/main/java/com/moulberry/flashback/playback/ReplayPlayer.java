@@ -16,7 +16,6 @@ import net.minecraft.world.level.biome.BiomeManager;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.Collection;
-import java.util.Optional;
 import java.util.UUID;
 
 public class ReplayPlayer extends ServerPlayer {
@@ -52,8 +51,8 @@ public class ReplayPlayer extends ServerPlayer {
     public CommonPlayerSpawnInfo createCommonSpawnInfo(ServerLevel serverLevel) {
         return new CommonPlayerSpawnInfo(serverLevel.dimensionTypeRegistration(), serverLevel.dimension(),
             ((ServerLevelExt)serverLevel).flashback$getSeedHash(), this.gameMode.getGameModeForPlayer(),
-            Optional.ofNullable(this.gameMode.getPreviousGameModeForPlayer()),
-            serverLevel.isDebug(), serverLevel.isFlat(), this.getLastDeathLocation(), this.getPortalCooldown(), serverLevel.getSeaLevel());
+            this.gameMode.getPreviousGameModeForPlayer(),
+            serverLevel.isDebug(), serverLevel.isFlat(), this.getLastDeathLocation(), this.getPortalCooldown());
     }
 
     @Override
@@ -72,7 +71,7 @@ public class ReplayPlayer extends ServerPlayer {
     public void syncCameraToSpectateTarget() {
         Entity resolved = null;
         if (this.spectateTarget != null && this.level() != null) {
-            Entity entity = this.level().getEntity(this.spectateTarget);
+            Entity entity = this.serverLevel().getEntity(this.spectateTarget);
             if (entity != null && !entity.isRemoved() && entity != this) {
                 resolved = entity;
             }
@@ -119,17 +118,12 @@ public class ReplayPlayer extends ServerPlayer {
     }
 
     @Override
-    public boolean hurtClient(DamageSource damageSource) {
+    public boolean hurt(DamageSource damageSource, float amount) {
         return false;
     }
 
     @Override
-    public boolean hurtServer(ServerLevel serverLevel, DamageSource damageSource, float f) {
-        return false;
-    }
-
-    @Override
-    public boolean isInvulnerableTo(ServerLevel serverLevel, DamageSource damageSource) {
+    public boolean isInvulnerableTo(DamageSource damageSource) {
         return true;
     }
 

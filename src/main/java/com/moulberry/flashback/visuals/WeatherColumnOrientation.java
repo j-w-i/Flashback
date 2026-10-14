@@ -44,12 +44,12 @@ public final class WeatherColumnOrientation {
 
     /** Vanilla's orientation for a column at integer offset ({@code dx},{@code dz}) from the camera block. */
     public static float vanillaSizeX(int dx, int dz) {
-        float length = Mth.length(dx, dz);
+        float length = (float) Mth.length(dx, dz);
         return -dz / length;
     }
 
     public static float vanillaSizeZ(int dx, int dz) {
-        float length = Mth.length(dx, dz);
+        float length = (float) Mth.length(dx, dz);
         return dx / length;
     }
 
@@ -69,7 +69,7 @@ public final class WeatherColumnOrientation {
             for (int j = 0; j < 32; j++) {
                 float offsetX = j - 16 + 0.5f - fractionX;
                 int index = row + j;
-                float length = Mth.length(offsetX, offsetZ);
+                float length = (float) Mth.length(offsetX, offsetZ);
                 if (length < MIN_LENGTH) {
                     // The camera is inside this column. Nothing sensible to face, and the
                     // direction would swing wildly, so keep it flat and let the near plane hide it.

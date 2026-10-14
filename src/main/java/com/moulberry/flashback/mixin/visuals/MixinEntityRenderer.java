@@ -1,12 +1,16 @@
 package com.moulberry.flashback.mixin.visuals;
 
-import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
-import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.moulberry.flashback.state.EditorState;
 import com.moulberry.flashback.state.EditorStateManager;
+import net.minecraft.client.renderer.culling.Frustum;
 import net.minecraft.client.renderer.entity.EntityRenderer;
+import net.minecraft.client.renderer.MultiBufferSource;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.network.chat.Component;
+import com.mojang.blaze3d.vertex.PoseStack;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -15,50 +19,36 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 @Mixin(EntityRenderer.class)
 public class MixinEntityRenderer {
 
-    @WrapOperation(method = "extractRenderState", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/entity/Entity;isInvisible()Z"))
-    public boolean isInvisible(Entity instance, Operation<Boolean> original) {
-        EditorState editorState = EditorStateManager.getCurrent();
-        if (editorState != null && editorState.isEntityHidden(instance)) {
-            return true;
-        }
-        return original.call(instance);
-    }
-
-    @WrapOperation(method = "extractNameTags(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/client/renderer/entity/state/EntityRenderState;FDD)V", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/entity/EntityRenderer;shouldShowName(Lnet/minecraft/world/entity/Entity;D)Z"))
-    public boolean shouldShowName(EntityRenderer<?, ?> instance, Entity entity, double distance, Operation<Boolean> original) {
-        EditorState editorState = EditorStateManager.getCurrent();
-        if (editorState != null) {
-            if (!editorState.replayVisuals.renderNametags) {
-                return false;
-            } else if (editorState.hideNametags.contains(entity.getUUID())) {
-                return false;
-            } else if (editorState.isEntityHidden(entity)) {
-                return false;
-            }
-        }
-        return original.call(instance, entity, distance);
-    }
-
-    @Inject(method = "shouldShowName", at = @At("HEAD"), cancellable = true)
-    public void shouldShowName(Entity entity, double d, CallbackInfoReturnable<Boolean> cir) {
-        EditorState editorState = EditorStateManager.getCurrent();
-        if (editorState != null) {
-            if (!editorState.replayVisuals.renderNametags) {
-                cir.setReturnValue(false);
-            } else if (editorState.hideNametags.contains(entity.getUUID())) {
-                cir.setReturnValue(false);
-            } else if (editorState.isEntityHidden(entity)) {
-                cir.setReturnValue(false);
-            }
+    @Inject(method = "shouldRender", at = @At("HEAD"), cancellable = true, require = 0)
+    public void flashback$shouldRender(Entity entity, Frustum frustum, double x, double y, double z, CallbackInfoReturnable<Boolean> cir) {
+        if (this.flashback$isHidden(entity)) {
+            cir.setReturnValue(false);
         }
     }
 
-    @Inject(method = "submitNameDisplay(Lnet/minecraft/client/renderer/entity/state/EntityRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/SubmitNodeCollector;Lnet/minecraft/client/renderer/state/level/CameraRenderState;I)V", at = @At("HEAD"), cancellable = true)
-    public void submitNameDisplay(CallbackInfo ci) {
+    @Inject(method = "shouldShowName(Lnet/minecraft/world/entity/Entity;)Z", at = @At("HEAD"), cancellable = true, require = 0)
+    public void shouldShowName(Entity entity, CallbackInfoReturnable<Boolean> cir) {
         EditorState editorState = EditorStateManager.getCurrent();
-        if (editorState != null && !editorState.replayVisuals.renderNametags) {
+        if (editorState != null && (!editorState.replayVisuals.renderNametags
+                || editorState.hideNametags.contains(entity.getUUID()) || this.flashback$isHidden(entity))) {
+            cir.setReturnValue(false);
+        }
+    }
+
+    @Inject(method = "renderNameTag", at = @At("HEAD"), cancellable = true, require = 0)
+    public void renderNameTag(Entity entity, Component component, PoseStack poseStack, MultiBufferSource buffers,
+                              int packedLight, float partialTick, CallbackInfo ci) {
+        EditorState editorState = EditorStateManager.getCurrent();
+        if (editorState != null && (!editorState.replayVisuals.renderNametags
+                || editorState.hideNametags.contains(entity.getUUID()) || this.flashback$isHidden(entity))) {
             ci.cancel();
         }
     }
 
+    @Unique
+    private boolean flashback$isHidden(Entity entity) {
+        EditorState editorState = EditorStateManager.getCurrent();
+        return editorState != null && (editorState.hideDuringExport.contains(entity.getUUID())
+                || editorState.hideAllSpectators && entity instanceof Player && entity.isSpectator());
+    }
 }

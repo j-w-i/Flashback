@@ -13,9 +13,9 @@ import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerClosePacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetContentPacket;
 import net.minecraft.network.protocol.game.ClientboundContainerSetSlotPacket;
-import net.minecraft.network.protocol.game.ClientboundMountScreenOpenPacket;
+import net.minecraft.network.protocol.game.ClientboundHorseScreenOpenPacket;
 import net.minecraft.network.protocol.game.ClientboundOpenScreenPacket;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.CraftingContainer;
@@ -96,15 +96,15 @@ public final class GuiRecording {
      */
     public static void observePacket(Packet<?> packet) {
         if (mirroredId == -1 && openTypes.isEmpty() && !(packet instanceof ClientboundOpenScreenPacket)
-            && !(packet instanceof ClientboundMountScreenOpenPacket)) {
+            && !(packet instanceof ClientboundHorseScreenOpenPacket)) {
             return;
         }
         try {
             if (packet instanceof ClientboundOpenScreenPacket open) {
                 openTypes.put(open.getContainerId(), nameOf(open.getType()));
-            } else if (packet instanceof ClientboundMountScreenOpenPacket mount) {
+            } else if (packet instanceof ClientboundHorseScreenOpenPacket mount) {
                 openTypes.put(mount.getContainerId(),
-                    FlashbackRemoteContainer.mountType(mount.getEntityId(), mount.getInventoryColumns()));
+                    FlashbackRemoteContainer.mountType(mount.getEntityId(), Math.max(0, (mount.getInventoryColumns() - 2) / 3)));
             } else if (packet instanceof ClientboundContainerClosePacket close) {
                 openTypes.remove(close.getContainerId());
                 if (close.getContainerId() == mirroredId) {
@@ -115,8 +115,8 @@ public final class GuiRecording {
                     mirrored.set(slot.getSlot(), slot.getItem().copy());
                 }
             } else if (packet instanceof ClientboundContainerSetContentPacket content) {
-                if (content.containerId() == mirroredId) {
-                    fillMirror(content.items(), content.carriedItem());
+                if (content.getContainerId() == mirroredId) {
+                    fillMirror(content.getItems(), content.getCarriedItem());
                 }
             }
         } catch (Throwable ignored) {
@@ -130,7 +130,7 @@ public final class GuiRecording {
             return List.of();
         }
         Minecraft minecraft = Minecraft.getInstance();
-        Screen screen = minecraft == null || minecraft.gui == null ? null : minecraft.gui.screen();
+        Screen screen = minecraft == null ? null : minecraft.screen;
         if (!(screen instanceof AbstractContainerScreen<?> containerScreen)) {
             return List.of();
         }
@@ -160,7 +160,7 @@ public final class GuiRecording {
                 return;
             }
             Minecraft minecraft = Minecraft.getInstance();
-            Screen screen = minecraft == null || minecraft.gui == null ? null : minecraft.gui.screen();
+            Screen screen = minecraft == null ? null : minecraft.screen;
             if (!(screen instanceof AbstractContainerScreen<?> containerScreen)) {
                 forgetMirror();
                 return;
@@ -248,7 +248,7 @@ public final class GuiRecording {
     }
 
     private static String nameOf(MenuType<?> menuType) {
-        Identifier id = BuiltInRegistries.MENU.getKey(menuType);
+        ResourceLocation id = BuiltInRegistries.MENU.getKey(menuType);
         return id == null ? "" : id.toString();
     }
 

@@ -3,17 +3,17 @@ package com.moulberry.flashback.action;
 import com.moulberry.flashback.Flashback;
 import com.moulberry.flashback.playback.ReplayServer;
 import net.minecraft.network.RegistryFriendlyByteBuf;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 
 public class ActionGamePacket implements Action {
 
-    private static final Identifier NAME = Flashback.createIdentifier("action/game_packet");
+    private static final ResourceLocation NAME = Flashback.createIdentifier("action/game_packet");
     public static final ActionGamePacket INSTANCE = new ActionGamePacket();
     private ActionGamePacket() {
     }
 
     @Override
-    public Identifier name() {
+    public ResourceLocation name() {
         return NAME;
     }
 

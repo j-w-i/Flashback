@@ -59,7 +59,7 @@ public class SimpleVoiceChatPlugin implements VoicechatPlugin {
         if (editorState != null) {
             Camera audioCamera = editorState.getAudioCamera();
             if (audioCamera != null) {
-                event.setCameraPosition(audioCamera.position(), audioCamera.forwardVector(), audioCamera.upVector());
+                event.setCameraPosition(audioCamera.getPosition(), audioCamera.getLookVector(), audioCamera.getUpVector());
             }
         }
     }

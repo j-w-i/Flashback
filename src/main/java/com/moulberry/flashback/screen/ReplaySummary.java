@@ -4,12 +4,9 @@
 package com.moulberry.flashback.screen;
 
 import com.moulberry.flashback.record.FlashbackMeta;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.SharedConstants;
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
-import net.minecraft.util.FormattedCharSequence;
 import org.jetbrains.annotations.Nullable;
 
 import java.nio.file.Path;
@@ -38,7 +35,7 @@ public class ReplaySummary implements Comparable<ReplaySummary> {
         this.filesize = filesize;
         this.iconBytes = iconBytes;
 
-        String versionString = FabricLoader.getInstance().getRawGameVersion();
+        String versionString = SharedConstants.getCurrentVersion().getName();
         if (metadata.namespacesForRegistries != null && !currentNamespacesForRegistries.equals(metadata.namespacesForRegistries)) {
             this.hasNamespaceMismatch = true;
         }
@@ -54,7 +51,7 @@ public class ReplaySummary implements Comparable<ReplaySummary> {
                     Component.literal(String.valueOf(metadata.protocolVersion)),
                     Component.literal(String.valueOf(SharedConstants.getProtocolVersion())));
             }
-        } else if (metadata.dataVersion != 0 && metadata.dataVersion != SharedConstants.getCurrentVersion().dataVersion().version()) {
+        } else if (metadata.dataVersion != 0 && metadata.dataVersion != SharedConstants.getCurrentVersion().getDataVersion().getVersion()) {
             this.hasWarning = true;
 
             if (metadata.versionString != null && !metadata.versionString.equals(versionString)) {
@@ -64,7 +61,7 @@ public class ReplaySummary implements Comparable<ReplaySummary> {
             } else {
                 this.hoverInfo = Component.translatable("flashback.incompatible_replay_version_data",
                     Component.literal(String.valueOf(metadata.dataVersion)),
-                    Component.literal(String.valueOf(SharedConstants.getCurrentVersion().dataVersion().version())));
+                    Component.literal(String.valueOf(SharedConstants.getCurrentVersion().getDataVersion().getVersion())));
             }
         } else if (this.hasNamespaceMismatch) {
             this.hasWarning = true;

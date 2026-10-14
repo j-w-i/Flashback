@@ -2,9 +2,7 @@ package com.moulberry.flashback.screen;
 
 import com.moulberry.flashback.Flashback;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.ActiveTextCollector;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
-import net.minecraft.client.gui.TextAlignment;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.MultiLineLabel;
 import net.minecraft.client.gui.screens.Screen;
@@ -51,7 +49,7 @@ public class UnsupportedLoaderScreen extends Screen {
             var button = Button.builder(Component.translatable("flashback.i_understand"), b -> {
                 Flashback.getConfig().internal.nextUnsupportedModLoaderWarning = System.currentTimeMillis() + Duration.ofDays(7).toMillis();
                 Flashback.getConfig().delayedSaveToDefaultFolder();
-                Minecraft.getInstance().gui.setScreen(this.lastScreen);
+                Minecraft.getInstance().setScreen(this.lastScreen);
            }).bounds((this.width - 150) / 2, buttonY, 150, 20).build();
             this.addRenderableWidget(button);
         } else if (this.countdown <= 10) {
@@ -63,10 +61,14 @@ public class UnsupportedLoaderScreen extends Screen {
     }
 
     @Override
-    public void extractRenderState(GuiGraphicsExtractor guiGraphics, int i, int j, float f) {
-        super.extractRenderState(guiGraphics, i, j, f);
-        guiGraphics.centeredText(this.font, this.title, this.width / 2, 70, 0xFFFFFFFF);
-        this.message.visitLines(TextAlignment.CENTER, this.width /2, 90, this.font.lineHeight, guiGraphics.textRenderer());
+    public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
+        super.render(guiGraphics, mouseX, mouseY, partialTick);
+        guiGraphics.drawCenteredString(this.font, this.title, this.width / 2, 70, 0xFFFFFFFF);
+        int y = 90;
+        for (var line : this.font.split(this.messageText, this.width - 50)) {
+            guiGraphics.drawCenteredString(this.font, line, this.width / 2, y, 0xFFFFFFFF);
+            y += this.font.lineHeight;
+        }
 
         if (this.countdown > 0 && System.currentTimeMillis() - this.lastInitTime > 1000) {
             this.countdown -= 1;

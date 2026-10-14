@@ -57,14 +57,14 @@ import com.seibel.distanthorizons.api.DhApi;
 import io.netty.buffer.Unpooled;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.api.ModInitializer;
-import net.fabricmc.fabric.api.client.command.v2.ClientCommands;
+import net.fabricmc.fabric.api.client.command.v2.ClientCommandManager;
 import net.fabricmc.fabric.api.client.command.v2.ClientCommandRegistrationCallback;
 import net.fabricmc.fabric.api.client.command.v2.FabricClientCommandSource;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.rendering.v1.HudRenderCallback;
 import net.fabricmc.fabric.api.command.v2.CommandRegistrationCallback;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.networking.v1.PayloadTypeRegistry;
@@ -78,12 +78,10 @@ import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.protocol.common.ClientCommonPacketListener;
 import net.minecraft.network.protocol.common.ClientboundCustomPayloadPacket;
 import net.minecraft.network.protocol.configuration.ClientConfigurationPacketListener;
-import net.minecraft.server.permissions.PermissionSet;
-import net.minecraft.util.FileUtil;
-import net.minecraft.util.Util;
+import net.minecraft.FileUtil;
+import net.minecraft.Util;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.components.debug.*;
 import net.minecraft.client.gui.components.toasts.SystemToast;
 import net.minecraft.client.gui.screens.*;
 import net.minecraft.client.gui.screens.multiplayer.JoinMultiplayerScreen;
@@ -97,14 +95,13 @@ import net.minecraft.core.*;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.codec.StreamCodec;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.*;
 import net.minecraft.server.packs.repository.PackRepository;
 import net.minecraft.server.packs.repository.ServerPacksSource;
 import net.minecraft.world.Difficulty;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.flag.FeatureFlagSet;
 import net.minecraft.world.flag.FeatureFlags;
 import net.minecraft.world.level.*;
 import net.minecraft.world.level.biome.Biome;
@@ -113,11 +110,8 @@ import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.dimension.BuiltinDimensionTypes;
 import net.minecraft.world.level.dimension.DimensionType;
 import net.minecraft.world.level.dimension.LevelStem;
-import net.minecraft.world.level.gamerules.GameRules;
 import net.minecraft.world.level.levelgen.WorldDimensions;
-import net.minecraft.world.level.levelgen.WorldGenSettings;
 import net.minecraft.world.level.levelgen.WorldOptions;
-import net.minecraft.world.level.storage.LevelDataAndDimensions;
 import net.minecraft.world.level.storage.LevelStorageSource;
 import net.minecraft.world.level.storage.PrimaryLevelData;
 import org.apache.commons.io.FileUtils;
@@ -172,22 +166,20 @@ public class Flashback implements ModInitializer, ClientModInitializer {
 
     public static long worldBorderLerpStartTime = -1L;
 
-    private static final KeyMapping.Category category = KeyMapping.Category.register(createIdentifier("keybind"));
-    public static final KeyMapping createMarker1KeyBind = KeyMappingHelper.registerKeyMapping(new KeyMapping("flashback.keybind.create_marker_1",
-        InputConstants.Type.KEYBOARD, InputConstants.UNKNOWN.getValue(), category));
-    public static final KeyMapping createMarker2KeyBind = KeyMappingHelper.registerKeyMapping(new KeyMapping("flashback.keybind.create_marker_2",
-        InputConstants.Type.KEYBOARD, InputConstants.UNKNOWN.getValue(), category));
-    public static final KeyMapping createMarker3KeyBind = KeyMappingHelper.registerKeyMapping(new KeyMapping("flashback.keybind.create_marker_3",
-        InputConstants.Type.KEYBOARD, InputConstants.UNKNOWN.getValue(), category));
-    public static final KeyMapping createMarker4KeyBind = KeyMappingHelper.registerKeyMapping(new KeyMapping("flashback.keybind.create_marker_4",
-        InputConstants.Type.KEYBOARD, InputConstants.UNKNOWN.getValue(), category));
-    public static final KeyMapping stopSpectatingKeyBind = KeyMappingHelper.registerKeyMapping(new KeyMapping("flashback.keybind.stop_spectating",
-        InputConstants.Type.KEYBOARD, InputConstants.KEY_M, category));
+    private static final String category = "key.category.flashback.keybind";
+    public static KeyMapping createMarker1KeyBind;
+    public static KeyMapping createMarker2KeyBind;
+    public static KeyMapping createMarker3KeyBind;
+    public static KeyMapping createMarker4KeyBind;
+    public static KeyMapping stopSpectatingKeyBind;
 
-    public static final Identifier RECORDING_INFO_DEBUG_SCREEN_ID = createIdentifier("recording_info");
+    public static ResourceLocation createResourceLocation(String value) {
+        return ResourceLocation.fromNamespaceAndPath("flashback", value);
+    }
 
-    public static Identifier createIdentifier(String value) {
-        return Identifier.fromNamespaceAndPath("flashback", value);
+    /** Compatibility alias for code that predates the Identifier to ResourceLocation rename. */
+    public static ResourceLocation createIdentifier(String value) {
+        return createResourceLocation(value);
     }
 
     public static Path getDataDirectory() {
@@ -212,27 +204,38 @@ public class Flashback implements ModInitializer, ClientModInitializer {
 
     @Override
     public void onInitialize() {
-        PayloadTypeRegistry.clientboundPlay().register(FinishedServerTick.TYPE,
+        PayloadTypeRegistry.playS2C().register(FinishedServerTick.TYPE,
                 StreamCodec.unit(FinishedServerTick.INSTANCE));
 
-        PayloadTypeRegistry.clientboundPlay().register(FlashbackForceClientTick.TYPE, StreamCodec.unit(FlashbackForceClientTick.INSTANCE));
-        PayloadTypeRegistry.clientboundPlay().register(FlashbackClearParticles.TYPE, StreamCodec.unit(FlashbackClearParticles.INSTANCE));
-        PayloadTypeRegistry.clientboundPlay().register(FlashbackClearBlockDestruction.TYPE, StreamCodec.unit(FlashbackClearBlockDestruction.INSTANCE));
-        PayloadTypeRegistry.clientboundPlay().register(FlashbackClearEntities.TYPE, StreamCodec.unit(FlashbackClearEntities.INSTANCE));
-        PayloadTypeRegistry.clientboundPlay().register(FlashbackInstantlyLerp.TYPE, StreamCodec.unit(FlashbackInstantlyLerp.INSTANCE));
-        PayloadTypeRegistry.clientboundPlay().register(FlashbackRemoteSelectHotbarSlot.TYPE, FlashbackRemoteSelectHotbarSlot.STREAM_CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(FlashbackRemoteExperience.TYPE, FlashbackRemoteExperience.STREAM_CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(FlashbackRemoteFoodData.TYPE, FlashbackRemoteFoodData.STREAM_CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(FlashbackRemoteSetSlot.TYPE, FlashbackRemoteSetSlot.STREAM_CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(FlashbackRemoteContainer.TYPE, FlashbackRemoteContainer.STREAM_CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(FlashbackVoiceChatSound.TYPE, FlashbackVoiceChatSound.STREAM_CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(FlashbackAccurateEntityPosition.TYPE, FlashbackAccurateEntityPosition.PLAYBACK_STREAM_CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(FlashbackSetBorderLerpStartTime.TYPE, FlashbackSetBorderLerpStartTime.STREAM_CODEC);
-        PayloadTypeRegistry.clientboundPlay().register(FlashbackRawCustomPayload.TYPE, FlashbackRawCustomPayload.STREAM_CODEC);
+        PayloadTypeRegistry.playS2C().register(FlashbackForceClientTick.TYPE, StreamCodec.unit(FlashbackForceClientTick.INSTANCE));
+        PayloadTypeRegistry.playS2C().register(FlashbackClearParticles.TYPE, StreamCodec.unit(FlashbackClearParticles.INSTANCE));
+        PayloadTypeRegistry.playS2C().register(FlashbackClearBlockDestruction.TYPE, StreamCodec.unit(FlashbackClearBlockDestruction.INSTANCE));
+        PayloadTypeRegistry.playS2C().register(FlashbackClearEntities.TYPE, StreamCodec.unit(FlashbackClearEntities.INSTANCE));
+        PayloadTypeRegistry.playS2C().register(FlashbackInstantlyLerp.TYPE, StreamCodec.unit(FlashbackInstantlyLerp.INSTANCE));
+        PayloadTypeRegistry.playS2C().register(FlashbackRemoteSelectHotbarSlot.TYPE, FlashbackRemoteSelectHotbarSlot.STREAM_CODEC);
+        PayloadTypeRegistry.playS2C().register(FlashbackRemoteExperience.TYPE, FlashbackRemoteExperience.STREAM_CODEC);
+        PayloadTypeRegistry.playS2C().register(FlashbackRemoteFoodData.TYPE, FlashbackRemoteFoodData.STREAM_CODEC);
+        PayloadTypeRegistry.playS2C().register(FlashbackRemoteSetSlot.TYPE, FlashbackRemoteSetSlot.STREAM_CODEC);
+        PayloadTypeRegistry.playS2C().register(FlashbackRemoteContainer.TYPE, FlashbackRemoteContainer.STREAM_CODEC);
+        PayloadTypeRegistry.playS2C().register(FlashbackVoiceChatSound.TYPE, FlashbackVoiceChatSound.STREAM_CODEC);
+        PayloadTypeRegistry.playS2C().register(FlashbackAccurateEntityPosition.TYPE, FlashbackAccurateEntityPosition.PLAYBACK_STREAM_CODEC);
+        PayloadTypeRegistry.playS2C().register(FlashbackSetBorderLerpStartTime.TYPE, FlashbackSetBorderLerpStartTime.STREAM_CODEC);
+        PayloadTypeRegistry.playS2C().register(FlashbackRawCustomPayload.TYPE, FlashbackRawCustomPayload.STREAM_CODEC);
     }
 
     @Override
     public void onInitializeClient() {
+        createMarker1KeyBind = KeyBindingHelper.registerKeyBinding(new KeyMapping("flashback.keybind.create_marker_1",
+            InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.getValue(), category));
+        createMarker2KeyBind = KeyBindingHelper.registerKeyBinding(new KeyMapping("flashback.keybind.create_marker_2",
+            InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.getValue(), category));
+        createMarker3KeyBind = KeyBindingHelper.registerKeyBinding(new KeyMapping("flashback.keybind.create_marker_3",
+            InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.getValue(), category));
+        createMarker4KeyBind = KeyBindingHelper.registerKeyBinding(new KeyMapping("flashback.keybind.create_marker_4",
+            InputConstants.Type.KEYSYM, InputConstants.UNKNOWN.getValue(), category));
+        stopSpectatingKeyBind = KeyBindingHelper.registerKeyBinding(new KeyMapping("flashback.keybind.stop_spectating",
+            InputConstants.Type.KEYSYM, InputConstants.KEY_M, category));
+
         Path configFolder = FabricLoader.getInstance().getConfigDir().resolve("flashback");
 
         try {
@@ -252,7 +255,7 @@ public class Flashback implements ModInitializer, ClientModInitializer {
         }
 
         if (FabricLoader.getInstance().isDevelopmentEnvironment()) {
-            Minecraft.getInstance().schedule(() -> Lattice.performTest(configElements));
+            Minecraft.getInstance().execute(() -> Lattice.performTest(configElements));
         }
 
         Keybinds.load(config);
@@ -329,17 +332,11 @@ public class Flashback implements ModInitializer, ClientModInitializer {
                 try {
                     ClientLevel level = Minecraft.getInstance().level;
                     if (level != null) {
-                        // Each one is taken down through the level's own method rather than by
-                        // emptying its map. The level keeps two of them - one by position for
-                        // drawing, one by breaker for the packets - and a position left in one
-                        // without the other makes the next crack for that block throw, which the
-                        // client reports as a network protocol error and disconnects over.
-                        List<BlockDestructionProgress> breaking = new ArrayList<>();
-                        for (SortedSet<BlockDestructionProgress> progresses : level.destructionProgress().values()) {
-                            breaking.addAll(progresses);
-                        }
-                        for (BlockDestructionProgress progress : breaking) {
-                            level.destroyBlockProgress(progress.getId(), progress.getPos(), -1);
+                        // 1.21.1 does not expose ClientLevel's active destruction map. Clear every
+                        // active entity breaker through the level API, which updates both the
+                        // position and breaker indexes consistently.
+                        for (Entity breaker : level.entitiesForRendering()) {
+                            level.destroyBlockProgress(breaker.getId(), breaker.blockPosition(), -1);
                         }
                     }
                 } catch (Throwable t) {
@@ -362,14 +359,10 @@ public class Flashback implements ModInitializer, ClientModInitializer {
             if (Flashback.isInReplay()) {
                 ClientLevel level = Minecraft.getInstance().level;
                 if (level == null) return;
+                // EntityInterpolation is a post-1.21.1 API. On 1.21.1, resetting the old
+                // render position to the current transform removes the previous-frame blend.
                 for (Entity entity : level.entitiesForRendering()) {
-                    if (entity.isInterpolating()) {
-                        var interpolation = entity.getInterpolation();
-                        entity.snapTo(interpolation.target().position(), interpolation.target().yRot(), interpolation.target().xRot());
-                        interpolation.cancel();
-                    } else {
-                        entity.setOldPosAndRot();
-                    }
+                    entity.setOldPosAndRot();
                 }
             }
         });
@@ -378,7 +371,7 @@ public class Flashback implements ModInitializer, ClientModInitializer {
             if (Flashback.isInReplay()) {
                 Entity entity = Minecraft.getInstance().level.getEntity(payload.entityId());
                 if (entity instanceof Player player) {
-                    player.getInventory().setSelectedSlot(payload.slot());
+                    player.getInventory().selected = payload.slot();
                 }
             }
         });
@@ -461,51 +454,34 @@ public class Flashback implements ModInitializer, ClientModInitializer {
             }
         });
 
-        // Setup custom debug screen info
-        DebugScreenEntries.register(RECORDING_INFO_DEBUG_SCREEN_ID, new DebugScreenEntry() {
-            @Override
-            public void display(DebugScreenDisplayer debugScreenDisplayer, @Nullable Level level, @Nullable LevelChunk levelChunk, @Nullable LevelChunk levelChunk2) {
-                if (Flashback.RECORDER != null) {
-                    debugScreenDisplayer.addToGroup(RECORDING_INFO_DEBUG_SCREEN_ID, Flashback.RECORDER.getDebugString());
-                }
-            }
-        });
-        Map<DebugScreenProfile, Map<Identifier, DebugScreenEntryStatus>> newProfiles = new LinkedHashMap<>();
-        for (Map.Entry<DebugScreenProfile, Map<Identifier, DebugScreenEntryStatus>> entry : DebugScreenEntries.PROFILES.entrySet()) {
-            var newMap = new LinkedHashMap<>(entry.getValue());
-            newMap.put(RECORDING_INFO_DEBUG_SCREEN_ID, DebugScreenEntryStatus.IN_OVERLAY);
-            newProfiles.put(entry.getKey(), Collections.unmodifiableMap(newMap));
-        }
-        DebugScreenEntries.PROFILES = Collections.unmodifiableMap(newProfiles);
-
         ClientCommandRegistrationCallback.EVENT.register((dispatcher, registryAccess) -> {
-            var flashback = ClientCommands.literal("flashback");
-            flashback.then(ClientCommands.literal("start").executes(this::startRecordingReplay));
-            flashback.then(ClientCommands.literal("finish").executes(this::finishRecordingReplay));
-            flashback.then(ClientCommands.literal("end").executes(this::finishRecordingReplay));
-            flashback.then(ClientCommands.literal("pause").executes(ctx -> {
+            var flashback = ClientCommandManager.literal("flashback");
+            flashback.then(ClientCommandManager.literal("start").executes(this::startRecordingReplay));
+            flashback.then(ClientCommandManager.literal("finish").executes(this::finishRecordingReplay));
+            flashback.then(ClientCommandManager.literal("end").executes(this::finishRecordingReplay));
+            flashback.then(ClientCommandManager.literal("pause").executes(ctx -> {
                 pauseRecordingReplay(true);
                 return 0;
             }));
-            flashback.then(ClientCommands.literal("unpause").executes(ctx -> {
+            flashback.then(ClientCommandManager.literal("unpause").executes(ctx -> {
                 pauseRecordingReplay(false);
                 return 0;
             }));
-            flashback.then(ClientCommands.literal("config").executes(this::openFlashbackConfig));
-            flashback.then(ClientCommands.literal("mark")
+            flashback.then(ClientCommandManager.literal("config").executes(this::openFlashbackConfig));
+            flashback.then(ClientCommandManager.literal("mark")
                 .executes(command -> {
                     this.addMarker(null, null, null);
                     return 0;
-                }).then(ClientCommands.argument("color", BetterColorArgument.color()).executes(command -> {
+                }).then(ClientCommandManager.argument("color", BetterColorArgument.color()).executes(command -> {
                     int colour = command.getArgument("color", Integer.class);
                     this.addMarker(colour, null, null);
                     return 0;
-                }).then(ClientCommands.argument("savePosition", BoolArgumentType.bool()).executes(command -> {
+                }).then(ClientCommandManager.argument("savePosition", BoolArgumentType.bool()).executes(command -> {
                     int colour = command.getArgument("color", Integer.class);
                     boolean savePosition = command.getArgument("savePosition", Boolean.class);
                     this.addMarker(colour, savePosition, null);
                     return 0;
-                }).then(ClientCommands.argument("description", StringArgumentType.greedyString()).executes(command -> {
+                }).then(ClientCommandManager.argument("description", StringArgumentType.greedyString()).executes(command -> {
                     int colour = command.getArgument("color", Integer.class);
                     boolean savePosition = command.getArgument("savePosition", Boolean.class);
                     String description = command.getArgument("description", String.class);
@@ -601,7 +577,7 @@ public class Flashback implements ModInitializer, ClientModInitializer {
             synchronizeTickingCanTickServer.set(true);
         });
 
-        HudElementRegistry.addLast(Identifier.fromNamespaceAndPath("flashback", "hud"), (graphics, delta) -> {
+        HudRenderCallback.EVENT.register((graphics, tickCounter) -> {
             ReplayServer replayServer = Flashback.getReplayServer();
             if (replayServer == null) {
                 return;
@@ -624,23 +600,23 @@ public class Flashback implements ModInitializer, ClientModInitializer {
                     int textTop = outerPadding + innerPadding;
 
                     graphics.fill(fillLeft, outerPadding, graphics.guiWidth() - 2, 4 + font.lineHeight-1 + 2, 0x80000000);
-                    graphics.text(font, dateString, dateLeft, textTop, -1, true);
+                    graphics.drawString(font, dateString, dateLeft, textTop, -1, true);
                 }
             }
         });
 
         ClientTickEvents.START_CLIENT_TICK.register(minecraft -> {
             if (RECORDER != null && Flashback.config.advanced.synchronizeTicking && minecraft.hasSingleplayerServer()) {
-                boolean isLevelLoaded = !(minecraft.gui.screen() instanceof LevelLoadingScreen);
-                boolean willRecord = minecraft.level != null && (minecraft.gui.overlay() == null || !minecraft.gui.overlay().isPausing()) &&
+                boolean isLevelLoaded = !(minecraft.screen instanceof LevelLoadingScreen);
+                boolean willRecord = minecraft.level != null && (minecraft.getOverlay() == null) &&
                     !minecraft.isPaused() && !RECORDER.isPaused() && isLevelLoaded;
                 while (willRecord && !synchronizeTickingCanTickClient.compareAndSet(true, false)) {
                     LockSupport.parkNanos("flashback synchronized ticking: waiting for server", 100000L);
                 }
             }
 
-            if (canReplaceScreen(minecraft.gui.screen())) {
-                openNewScreen(unsupportedLoader, minecraft.gui.screen());
+            if (canReplaceScreen(minecraft.screen)) {
+                openNewScreen(unsupportedLoader, minecraft.screen);
             }
 
             if (minecraft.level != null && delayedStartRecording > 0) {
@@ -715,7 +691,7 @@ public class Flashback implements ModInitializer, ClientModInitializer {
             if (System.currentTimeMillis() > Flashback.getConfig().internal.nextUnsupportedModLoaderWarning) {
                 Component warning = Component.translatable("flashback.unsupported_loader.message", Component.literal(loaderName));
 
-                Minecraft.getInstance().gui.setScreen(new UnsupportedLoaderScreen(currentScreen,
+                Minecraft.getInstance().setScreen(new UnsupportedLoaderScreen(currentScreen,
                         Component.translatable("flashback.screen_unsupported"), warning));
                 return;
             }
@@ -729,7 +705,7 @@ public class Flashback implements ModInitializer, ClientModInitializer {
                     .append(Component.translatable("flashback.recovery3")).append(nl).append(nl)
                     .append(Component.translatable("flashback.recovery4").withStyle(ChatFormatting.RED)).append(nl).append(nl)
                     .append(Component.translatable("flashback.recovery5").withStyle(ChatFormatting.GREEN));
-            Minecraft.getInstance().gui.setScreen(new RecoverRecordingsScreen(currentScreen, title, description, recover -> {
+            Minecraft.getInstance().setScreen(new RecoverRecordingsScreen(currentScreen, title, description, recover -> {
                 switch (recover) {
                     case RECOVER -> {
                         pendingReplaySave.addAll(pendingReplayRecovery);
@@ -752,7 +728,7 @@ public class Flashback implements ModInitializer, ClientModInitializer {
 
             LocalDateTime dateTime = LocalDateTime.now();
             dateTime = dateTime.withNano(0);
-            Minecraft.getInstance().gui.setScreen(new SaveReplayScreen(currentScreen, recordFolder, dateTime.toString()));
+            Minecraft.getInstance().setScreen(new SaveReplayScreen(currentScreen, recordFolder, dateTime.toString()));
             return;
         }
 
@@ -760,7 +736,7 @@ public class Flashback implements ModInitializer, ClientModInitializer {
             String mods = StringUtils.join(pendingUnsupportedModsForRecording, ", ");
             Component title = Component.translatable("flashback.incompatible_with_recording");
             Component description = Component.translatable("flashback.incompatible_with_recording_description").append(Component.literal(mods).withStyle(ChatFormatting.RED));
-            Minecraft.getInstance().gui.setScreen(new AlertScreen(() -> Minecraft.getInstance().gui.setScreen(currentScreen), title, description));
+            Minecraft.getInstance().setScreen(new AlertScreen(() -> Minecraft.getInstance().setScreen(currentScreen), title, description));
             pendingUnsupportedModsForRecording = null;
             return;
         }
@@ -780,7 +756,7 @@ public class Flashback implements ModInitializer, ClientModInitializer {
     }
 
     public static void openConfigScreen(Screen oldScreen) {
-        Minecraft.getInstance().gui.setScreen(createConfigScreen(oldScreen));
+        Minecraft.getInstance().setScreen(createConfigScreen(oldScreen));
     }
 
     public static List<String> getReplayIncompatibleMods() {
@@ -832,7 +808,7 @@ public class Flashback implements ModInitializer, ClientModInitializer {
         Minecraft minecraft = Minecraft.getInstance();
 
         if (RECORDER == null) {
-            minecraft.gui.hud.getChat().addClientSystemMessage(Component.translatable("flashback.mark_command.not_recording").withStyle(ChatFormatting.RED));
+            minecraft.gui.getChat().addMessage(Component.translatable("flashback.mark_command.not_recording").withStyle(ChatFormatting.RED));
             return;
         }
 
@@ -873,7 +849,7 @@ public class Flashback implements ModInitializer, ClientModInitializer {
             }
         }
 
-        minecraft.gui.hud.getChat().addClientSystemMessage(Component.literal(feedback));
+        minecraft.gui.getChat().addMessage(Component.literal(feedback));
         RECORDER.addMarker(new ReplayMarker(colour, position, description));
     }
 
@@ -1087,7 +1063,7 @@ public class Flashback implements ModInitializer, ClientModInitializer {
 
     public static void startRecordingReplay() {
         if (RECORDER != null) {
-            SystemToast.add(Minecraft.getInstance().gui.toastManager(), FlashbackSystemToasts.RECORDING_TOAST,
+            SystemToast.add(Minecraft.getInstance().getToasts(), FlashbackSystemToasts.RECORDING_TOAST,
                     Component.translatable("flashback.toast.already_recording"), Component.translatable("flashback.toast.already_recording_description"));
             return;
         }
@@ -1103,7 +1079,7 @@ public class Flashback implements ModInitializer, ClientModInitializer {
         // ended. Without this, the first screen to close could be recorded as one that opened.
         GuiRecording.reset();
         if (Flashback.getConfig().recordingControls.showRecordingToasts) {
-            SystemToast.add(Minecraft.getInstance().gui.toastManager(), FlashbackSystemToasts.RECORDING_TOAST,
+            SystemToast.add(Minecraft.getInstance().getToasts(), FlashbackSystemToasts.RECORDING_TOAST,
                     FlashbackTextComponents.FLASHBACK, Component.translatable("flashback.toast.started_recording"));
         }
     }
@@ -1112,7 +1088,7 @@ public class Flashback implements ModInitializer, ClientModInitializer {
         RECORDER.setPaused(pause);
 
         if (Flashback.getConfig().recordingControls.showRecordingToasts) {
-            SystemToast.add(Minecraft.getInstance().gui.toastManager(), FlashbackSystemToasts.RECORDING_TOAST,
+            SystemToast.add(Minecraft.getInstance().getToasts(), FlashbackSystemToasts.RECORDING_TOAST,
                     FlashbackTextComponents.FLASHBACK, Component.translatable(pause ? "flashback.toast.paused_recording" : "flashback.toast.unpaused_recording"));
         }
     }
@@ -1129,14 +1105,14 @@ public class Flashback implements ModInitializer, ClientModInitializer {
         }
 
         if (Flashback.getConfig().recordingControls.showRecordingToasts) {
-            SystemToast.add(Minecraft.getInstance().gui.toastManager(), FlashbackSystemToasts.RECORDING_TOAST,
+            SystemToast.add(Minecraft.getInstance().getToasts(), FlashbackSystemToasts.RECORDING_TOAST,
                 FlashbackTextComponents.FLASHBACK, Component.translatable("flashback.toast.cancelled_recording"));
         }
     }
 
     public static void finishRecordingReplay() {
         if (RECORDER == null) {
-            SystemToast.add(Minecraft.getInstance().gui.toastManager(), FlashbackSystemToasts.RECORDING_TOAST,
+            SystemToast.add(Minecraft.getInstance().getToasts(), FlashbackSystemToasts.RECORDING_TOAST,
                     Component.translatable("flashback.toast.not_recording"), Component.translatable("flashback.toast.cant_finish_when_not_recording"));
             return;
         }
@@ -1171,7 +1147,7 @@ public class Flashback implements ModInitializer, ClientModInitializer {
         }
 
         if (Flashback.getConfig().recordingControls.showRecordingToasts) {
-            SystemToast.add(Minecraft.getInstance().gui.toastManager(), FlashbackSystemToasts.RECORDING_TOAST,
+            SystemToast.add(Minecraft.getInstance().getToasts(), FlashbackSystemToasts.RECORDING_TOAST,
                 FlashbackTextComponents.FLASHBACK, Component.translatable("flashback.toast.finished_recording"));
         }
     }
@@ -1225,19 +1201,19 @@ public class Flashback implements ModInitializer, ClientModInitializer {
         });
     }
 
-    public static GameRules createReplayGameRules(FeatureFlagSet featureFlagSet) {
-        GameRules gameRules = new GameRules(featureFlagSet);
-        gameRules.set(GameRules.SPAWN_MOBS, false, null);
-        gameRules.set(GameRules.ENTITY_DROPS, false, null);
-        gameRules.set(GameRules.SHOW_ADVANCEMENT_MESSAGES, false, null);
-        gameRules.set(GameRules.RAIDS, false, null);
-        gameRules.set(GameRules.SPAWN_PATROLS, false, null);
-        gameRules.set(GameRules.SPAWN_WARDENS, false, null);
-        gameRules.set(GameRules.SPAWN_WANDERING_TRADERS, false, null);
-        gameRules.set(GameRules.SPREAD_VINES, false, null);
-        gameRules.set(GameRules.FIRE_SPREAD_RADIUS_AROUND_PLAYER, 0, null);
-        gameRules.set(GameRules.ADVANCE_WEATHER, false, null);
-        gameRules.set(GameRules.RANDOM_TICK_SPEED, 0, null);
+    public static GameRules createReplayGameRules() {
+        GameRules gameRules = new GameRules();
+        gameRules.getRule(GameRules.RULE_DOMOBSPAWNING).set(false, null);
+        gameRules.getRule(GameRules.RULE_DOENTITYDROPS).set(false, null);
+        gameRules.getRule(GameRules.RULE_ANNOUNCE_ADVANCEMENTS).set(false, null);
+        gameRules.getRule(GameRules.RULE_DISABLE_RAIDS).set(true, null);
+        gameRules.getRule(GameRules.RULE_DO_PATROL_SPAWNING).set(false, null);
+        gameRules.getRule(GameRules.RULE_DO_WARDEN_SPAWNING).set(false, null);
+        gameRules.getRule(GameRules.RULE_DO_TRADER_SPAWNING).set(false, null);
+        gameRules.getRule(GameRules.RULE_DO_VINES_SPREAD).set(false, null);
+        gameRules.getRule(GameRules.RULE_DOFIRETICK).set(false, null);
+        gameRules.getRule(GameRules.RULE_WEATHER_CYCLE).set(false, null);
+        gameRules.getRule(GameRules.RULE_RANDOMTICKING).set(0, null);
         return gameRules;
     }
 
@@ -1245,10 +1221,10 @@ public class Flashback implements ModInitializer, ClientModInitializer {
         // Disconnect
         Minecraft minecraft = Minecraft.getInstance();
         if (minecraft.level != null) {
-            minecraft.level.disconnect(Component.empty());
+            minecraft.level.disconnect();
         }
-        minecraft.disconnectWithProgressScreen();
-        minecraft.gui.setScreen(new TitleScreen());
+        minecraft.disconnect();
+        minecraft.setScreen(new TitleScreen());
 
         ReplayUI.shownRegistryErrorWarning = false;
         ReplayUI.shownPlayerSpawnErrorWarning = false;
@@ -1307,30 +1283,24 @@ public class Flashback implements ModInitializer, ClientModInitializer {
 
             packRepository.reload();
 
-            GameRules gameRules = createReplayGameRules(FeatureFlags.DEFAULT_FLAGS);
+            GameRules gameRules = createReplayGameRules();
 
             WorldDataConfiguration worldDataConfiguration = new WorldDataConfiguration(new DataPackConfig(List.of(), List.of()), FeatureFlags.DEFAULT_FLAGS);
-            LevelSettings levelSettings = new LevelSettings("Replay", GameType.SPECTATOR,
-                new LevelSettings.DifficultySettings(Difficulty.NORMAL, false, true), true, worldDataConfiguration);
+            LevelSettings levelSettings = new LevelSettings("Replay", GameType.SPECTATOR, false, Difficulty.NORMAL, true, gameRules, worldDataConfiguration);
             WorldLoader.PackConfig packConfig = new WorldLoader.PackConfig(packRepository, worldDataConfiguration, false, true);
-            WorldLoader.InitConfig initConfig = new WorldLoader.InitConfig(packConfig, Commands.CommandSelection.DEDICATED, PermissionSet.ALL_PERMISSIONS);
+            WorldLoader.InitConfig initConfig = new WorldLoader.InitConfig(packConfig, Commands.CommandSelection.DEDICATED, 4);
 
             WorldStem worldStem = Util.blockUntilDone(executor -> WorldLoader.load(initConfig, dataLoadContext -> {
                 Registry<LevelStem> registry = new MappedRegistry<>(Registries.LEVEL_STEM, Lifecycle.stable()).freeze();
-
-                Holder.Reference<Biome> plains = dataLoadContext.datapackWorldRegistries().lookupOrThrow(Registries.BIOME).get(Biomes.PLAINS).get();
-                Holder.Reference<DimensionType> overworld = dataLoadContext.datapackWorldRegistries().lookupOrThrow(Registries.DIMENSION_TYPE).get(BuiltinDimensionTypes.OVERWORLD).get();
-
+                Holder.Reference<Biome> plains = dataLoadContext.datapackWorldgen().registryOrThrow(Registries.BIOME).getHolder(Biomes.PLAINS).get();
+                Holder.Reference<DimensionType> overworld = dataLoadContext.datapackWorldgen().registryOrThrow(Registries.DIMENSION_TYPE).getHolder(BuiltinDimensionTypes.OVERWORLD).get();
                 WorldDimensions worldDimensions = new WorldDimensions(Map.of(LevelStem.OVERWORLD, new LevelStem(overworld, new EmptyLevelSource(plains))));
                 WorldDimensions.Complete complete = worldDimensions.bake(registry);
-
-                return new WorldLoader.DataLoadOutput<>(new LevelDataAndDimensions.WorldDataAndGenSettings(
-                    new PrimaryLevelData(levelSettings, complete.specialWorldProperty(), complete.lifecycle()),
-                    new WorldGenSettings(new WorldOptions(0L, false, false), worldDimensions)
-                ), complete.dimensionsRegistryAccess());
+                return new WorldLoader.DataLoadOutput<>(new PrimaryLevelData(levelSettings, new WorldOptions(0L, false, false),
+                    complete.specialWorldProperty(), complete.lifecycle()), complete.dimensionsRegistryAccess());
             }, WorldStem::new, Util.backgroundExecutor(), executor)).get();
 
-            ((MinecraftExt)Minecraft.getInstance()).flashback$startReplayServer(access, packRepository, worldStem, Optional.of(gameRules), new MinecraftExt.StartReplayServerInfo(replayUuid, playbackFileSystem, metadata));
+            ((MinecraftExt)Minecraft.getInstance()).flashback$startReplayServer(access, packRepository, worldStem, new MinecraftExt.StartReplayServerInfo(replayUuid, playbackFileSystem, metadata));
             playbackFileSystem = null;
 
             TaskbarManager.launchTaskbarManager();

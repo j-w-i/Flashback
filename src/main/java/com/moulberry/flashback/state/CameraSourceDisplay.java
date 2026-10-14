@@ -50,7 +50,7 @@ public final class CameraSourceDisplay {
         if (connection != null) {
             PlayerInfo info = connection.getPlayerInfo(playerId);
             if (info != null) {
-                return info.getProfile().name();
+                return info.getProfile().getName();
             }
         }
 

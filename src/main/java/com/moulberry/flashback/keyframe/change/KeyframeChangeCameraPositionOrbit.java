@@ -44,7 +44,7 @@ public record KeyframeChangeCameraPositionOrbit(Vector3d center, double distance
             if (this.target != null && minecraft != null && minecraft.level != null) {
                 Entity subject = minecraft.level.getEntities().get(this.target);
                 if (subject != null && subject != player) {
-                    float partialTick = minecraft.deltaTracker.getGameTimeDeltaPartialTick(true);
+                    float partialTick = minecraft.timer.getGameTimeDeltaPartialTick(true);
                     Vec3 eye = subject.getEyePosition(partialTick);
                     centre = new Vector3d(eye.x, eye.y, eye.z);
                     if (this.smoothFollow) {

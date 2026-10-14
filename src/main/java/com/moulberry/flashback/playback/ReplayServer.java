@@ -49,9 +49,9 @@ import it.unimi.dsi.fastutil.ints.IntOpenHashSet;
 import it.unimi.dsi.fastutil.ints.IntSet;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 import net.fabricmc.fabric.api.client.networking.v1.ClientPlayNetworking;
-import net.fabricmc.fabric.api.event.lifecycle.v1.ServerLevelEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerWorldEvents;
 import net.fabricmc.fabric.api.networking.v1.ServerPlayNetworking;
-import net.minecraft.util.Util;
+import net.minecraft.Util;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.server.IntegratedServer;
 import net.minecraft.core.BlockPos;
@@ -75,20 +75,16 @@ import net.minecraft.server.level.ServerEntity;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.TicketType;
-import net.minecraft.server.level.progress.LevelLoadListener;
+import net.minecraft.server.level.progress.ChunkProgressListenerFactory;
 import net.minecraft.server.network.CommonListenerCookie;
 import net.minecraft.server.network.ConfigurationTask;
 import net.minecraft.server.packs.repository.PackRepository;
-import net.minecraft.server.players.NameAndId;
 import net.minecraft.server.players.PlayerList;
 import net.minecraft.stats.ServerStatsCounter;
 import net.minecraft.util.Mth;
 import net.minecraft.world.BossEvent;
-import net.minecraft.world.clock.WorldClocks;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.ExperienceOrb;
-import net.minecraft.world.entity.PositionMoveRotation;
-import net.minecraft.world.entity.PositionPath;
 import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.entity.player.Player;
@@ -97,15 +93,13 @@ import net.minecraft.world.food.FoodData;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.Level;
-import net.minecraft.world.level.LevelSettings;
 import net.minecraft.world.level.WorldDataConfiguration;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.minecraft.world.level.chunk.PalettedContainer;
-import net.minecraft.world.level.gamerules.GameRules;
+import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.storage.LevelResource;
 import net.minecraft.world.level.storage.LevelStorageSource;
-import net.minecraft.world.level.storage.PrimaryLevelData;
 import net.minecraft.world.level.storage.ServerLevelData;
 import net.minecraft.world.phys.Vec3;
 import org.jetbrains.annotations.Nullable;
@@ -208,8 +202,8 @@ public class ReplayServer extends IntegratedServer {
     private final IgnoredCustomPayloads ignoredCustomPayloads = new IgnoredCustomPayloads();
 
     public ReplayServer(Thread thread, Minecraft minecraft, LevelStorageSource.LevelStorageAccess levelStorageAccess, PackRepository packRepository, WorldStem worldStem,
-                        Optional<GameRules> gameRules, Services services, LevelLoadListener levelLoadListener, MinecraftExt.StartReplayServerInfo info) {
-        super(thread, minecraft, levelStorageAccess, packRepository, worldStem, gameRules, services, levelLoadListener);
+                        Services services, ChunkProgressListenerFactory chunkProgressListenerFactory, MinecraftExt.StartReplayServerInfo info) {
+        super(thread, minecraft, levelStorageAccess, packRepository, worldStem, services, chunkProgressListenerFactory);
         this.playbackUUID = info.playbackUUID();
         this.playbackFileSystem = info.playbackFileSystem();
         this.metadata = info.metadata();
@@ -240,28 +234,12 @@ public class ReplayServer extends IntegratedServer {
                                List<Packet<? super ClientConfigurationPacketListener>> initialPackets,
                                List<ConfigurationTask> configurationTasks,
                                @Nullable Collection<String> knownPackIds) {
-        if (this.worldData instanceof PrimaryLevelData primaryLevelData) {
-            primaryLevelData.settings = new LevelSettings(
-                primaryLevelData.settings.levelName(),
-                primaryLevelData.settings.gameType(),
-                primaryLevelData.settings.difficultySettings(),
-                primaryLevelData.settings.allowCommands(),
-                new WorldDataConfiguration(
-                    this.worldData.getDataConfiguration().dataPacks(),
-                    featureFlagSet
-                )
-            );
-        } else {
-            this.worldData.setDataConfiguration(new WorldDataConfiguration(
-                this.worldData.getDataConfiguration().dataPacks(),
-                featureFlagSet
-            ));
-        }
-
-        this.gameRules = this.gameRules.copy(featureFlagSet);
+        this.worldData.setDataConfiguration(new WorldDataConfiguration(
+            this.worldData.getDataConfiguration().dataPacks(),
+            featureFlagSet
+        ));
 
         this.reloadResources(knownPackIds != null ? knownPackIds : this.getPackRepository().getSelectedIds());
-        this.clockManager().init(this);
 
         this.gamePacketCodec = GameProtocols.CLIENTBOUND_TEMPLATE.bind(RegistryFriendlyByteBuf.decorator(this.registryAccess())).codec();
 
@@ -295,7 +273,15 @@ public class ReplayServer extends IntegratedServer {
 
     @Override
     public boolean initServer() {
-        this.setPlayerList(new PlayerList(this, this.registries(), this.playerDataStorage, this.notificationManager()) {
+        this.setPlayerList(new PlayerList(this, this.registries(), this.playerDataStorage, 1) {
+            @Override
+            public ServerPlayer getPlayerForLogin(GameProfile gameProfile, ClientInformation clientInformation) {
+                // 1.21.1 creates login players in PlayerList, not the configuration listener.
+                // A plain ServerPlayer is excluded from replayViewers, so recorded chunks and
+                // light updates would never be delivered through the replay tracking path.
+                return ReplayServer.this.createPlayer(ReplayServer.this.overworld(), gameProfile, clientInformation);
+            }
+
             @Override
             public void placeNewPlayer(Connection connection, ServerPlayer serverPlayer, CommonListenerCookie commonListenerCookie) {
                 if (Flashback.getConfig().internal.filterUnnecessaryPackets) {
@@ -305,7 +291,7 @@ public class ReplayServer extends IntegratedServer {
             }
 
             @Override
-            public boolean canBypassPlayerLimit(NameAndId nameAndId) {
+            public boolean canBypassPlayerLimit(GameProfile gameProfile) {
                 return true;
             }
 
@@ -355,7 +341,7 @@ public class ReplayServer extends IntegratedServer {
                         Vec3 source = replayViewer.position();
 
                         if (audioSourceEntity != null) {
-                            Entity entity = replayViewer.level().getEntity(audioSourceEntity);
+                            Entity entity = replayViewer.serverLevel().getEntity(audioSourceEntity);
                             if (entity != null) {
                                 source = entity.position();
                             }
@@ -434,7 +420,7 @@ public class ReplayServer extends IntegratedServer {
             public ServerStatsCounter getPlayerStats(Player player) {
                 File statsDir = this.getServer().getWorldPath(LevelResource.PLAYER_STATS_DIR).toFile();
                 File statsFile = new File(statsDir, player.getUUID() + ".json");
-                return new ServerStatsCounter(this.getServer(), statsFile.toPath());
+                return new ServerStatsCounter(this.getServer(), statsFile);
             }
         });
 
@@ -841,7 +827,7 @@ public class ReplayServer extends IntegratedServer {
                             entity.setYRot(yaw);
                             entity.setXRot(pitch);
                         } else {
-                            entity.snapTo(x, y, z, yaw, pitch);
+                            entity.moveTo(x, y, z, yaw, pitch);
                             updatePositionOfPassengers(entity);
                         }
 
@@ -880,11 +866,11 @@ public class ReplayServer extends IntegratedServer {
             this.gamePacketHandler.flushPendingEntities();
 
             try {
-                int x = packet.x();
-                int z = packet.z();
+                int x = packet.getX();
+                int z = packet.getZ();
                 LevelChunk chunk = this.gamePacketHandler.level().getChunk(x, z);
 
-                if (Flashback.EXPORT_JOB != null || !doesCachedChunkIdMatch(chunk, index) || this.gamePacketHandler.forceSendChunksDueToMovingPistonShenanigans.contains(ChunkPos.pack(x, z))) {
+                if (Flashback.EXPORT_JOB != null || !doesCachedChunkIdMatch(chunk, index) || this.gamePacketHandler.forceSendChunksDueToMovingPistonShenanigans.contains(new ChunkPos(x, z).toLong())) {
                     packet.handle(this.gamePacketHandler);
 
                     if (chunk instanceof LevelChunkExt ext) {
@@ -907,7 +893,7 @@ public class ReplayServer extends IntegratedServer {
         return false;
     }
 
-    public static final TicketType ENTITY_LOAD_TICKET = new TicketType(20L, TicketType.FLAG_LOADING | TicketType.FLAG_SIMULATION);
+    public static final TicketType<ChunkPos> ENTITY_LOAD_TICKET = TicketType.create("replay_entity_load", Comparator.comparingLong(ChunkPos::toLong), 5);
 
     @Override
     public void loadLevel() {
@@ -923,7 +909,7 @@ public class ReplayServer extends IntegratedServer {
             return;
         }
         this.clearLevel(serverLevel);
-        ServerLevelEvents.UNLOAD.invoker().onLevelUnload(this, serverLevel);
+        ServerWorldEvents.UNLOAD.invoker().onWorldUnload(this, serverLevel);
         try {
             serverLevel.close();
         } catch (IOException e) {
@@ -969,12 +955,10 @@ public class ReplayServer extends IntegratedServer {
         return EditorStateManager.get(this.metadata.replayIdentifier);
     }
 
-    /** Recorded time packets are authoritative; the replay server must not add live-server corrections. */
+    /** Recorded time packets are authoritative; do not send live-server time corrections. */
     @Override
-    public void forceGameTimeSynchronization() {
-        // Replaces the no-op synchronizeTime(ServerLevel) override removed in the 26.1 port.
-        // Vanilla calls this every second even though replay simulation is frozen, which jumps
-        // the client's independently interpolated weather/world clock back or forward.
+    public void synchronizeTime(ServerLevel level) {
+        // Vanilla time synchronization would overwrite the time recorded in the replay packets.
     }
 
     @Override
@@ -1189,8 +1173,8 @@ public class ReplayServer extends IntegratedServer {
                     replayViewer.lastFirstPersonSaturationLevel = foodData.getSaturationLevel();
                     ServerPlayNetworking.send(replayViewer, new FlashbackRemoteFoodData(playerCamera.getId(), foodData.getFoodLevel(), foodData.getSaturationLevel()));
 
-                    replayViewer.lastFirstPersonSelectedSlot = inventory.getSelectedSlot();
-                    ServerPlayNetworking.send(replayViewer, new FlashbackRemoteSelectHotbarSlot(playerCamera.getId(), inventory.getSelectedSlot()));
+                    replayViewer.lastFirstPersonSelectedSlot = inventory.selected;
+                    ServerPlayNetworking.send(replayViewer, new FlashbackRemoteSelectHotbarSlot(playerCamera.getId(), inventory.selected));
 
                     for (int i = 0; i < 9; i++) {
                         ItemStack hotbarItem = inventory.getItem(i);
@@ -1215,9 +1199,9 @@ public class ReplayServer extends IntegratedServer {
                         ServerPlayNetworking.send(replayViewer, new FlashbackRemoteFoodData(playerCamera.getId(), foodData.getFoodLevel(), foodData.getSaturationLevel()));
                     }
 
-                    if (replayViewer.lastFirstPersonSelectedSlot != inventory.getSelectedSlot()) {
-                        replayViewer.lastFirstPersonSelectedSlot = inventory.getSelectedSlot();
-                        ServerPlayNetworking.send(replayViewer, new FlashbackRemoteSelectHotbarSlot(playerCamera.getId(), inventory.getSelectedSlot()));
+                    if (replayViewer.lastFirstPersonSelectedSlot != inventory.selected) {
+                        replayViewer.lastFirstPersonSelectedSlot = inventory.selected;
+                        ServerPlayNetworking.send(replayViewer, new FlashbackRemoteSelectHotbarSlot(playerCamera.getId(), inventory.selected));
                     }
 
                     for (int i = 0; i < 9; i++) {
@@ -1329,8 +1313,8 @@ public class ReplayServer extends IntegratedServer {
         // Add tickets for keeping entities loaded
         for (ServerLevel level : this.getAllLevels()) {
             for (Entity entity : level.getAllEntities()) {
-                ChunkPos chunkPos = ChunkPos.containing(entity.blockPosition());
-                level.getChunkSource().addTicketWithRadius(ENTITY_LOAD_TICKET, chunkPos, 3);
+                ChunkPos chunkPos = new ChunkPos(entity.blockPosition());
+                level.getChunkSource().addRegionTicket(ENTITY_LOAD_TICKET, chunkPos, 3, chunkPos);
             }
         }
 
@@ -1366,17 +1350,13 @@ public class ReplayServer extends IntegratedServer {
                         byte quantizedYRot = (byte) Mth.floor(serverEntity.entity.getYRot() * 256.0F / 360.0F);
                         byte quantizedXRot = (byte) Mth.floor(serverEntity.entity.getXRot() * 256.0F / 360.0F);
 
-                        PositionPath position = serverEntity.interpolationTracker.getPositionPath(trackingPosition);
-                        serverEntity.interpolationTracker.clear();
-
                         if (!serverEntity.entity.isPassenger() && !serverEntity.positionCodec.getBase().equals(trackingPosition)) {
-                            trackedEntity.sendToTrackingPlayers(new ClientboundEntityPositionSyncPacket(serverEntity.entity.getId(),
-                                position, serverEntity.entity.getYRot(), serverEntity.entity.getXRot(), serverEntity.wasOnGround));
+                            trackedEntity.broadcast(new ClientboundTeleportEntityPacket(serverEntity.entity));
                             serverEntity.positionCodec.setBase(trackingPosition);
                             serverEntity.lastSentYRot = quantizedYRot;
                             serverEntity.lastSentXRot = quantizedXRot;
                         } else if (quantizedYRot != serverEntity.lastSentYRot || quantizedXRot != serverEntity.lastSentXRot) {
-                            trackedEntity.sendToTrackingPlayers(new ClientboundMoveEntityPacket.Rot(entityId, quantizedYRot, quantizedXRot, serverEntity.wasOnGround));
+                            trackedEntity.broadcast(new ClientboundMoveEntityPacket.Rot(entityId, quantizedYRot, quantizedXRot, serverEntity.wasOnGround));
                             serverEntity.lastSentYRot = quantizedYRot;
                             serverEntity.lastSentXRot = quantizedXRot;
                         }
@@ -1652,7 +1632,7 @@ public class ReplayServer extends IntegratedServer {
                     int chunkY = BlockPos.getY(chunkPos);
                     int chunkZ = BlockPos.getZ(chunkPos);
 
-                    if (chunkY < level.getMinSectionY() || chunkY > level.getMaxSectionY()) {
+                    if (chunkY < (level.getMinBuildHeight() >> 4) || chunkY > ((level.getMaxBuildHeight() - 1) >> 4)) {
                         continue;
                     }
 
@@ -1716,8 +1696,8 @@ public class ReplayServer extends IntegratedServer {
             }
             if (shouldFollow) {
                 replayViewer.followLocalPlayerNextTick = false;
-                replayViewer.teleportTo(currentLevel, follow.getX(), follow.getY(), follow.getZ(), Set.of(),
-                    follow.getYRot(), follow.getXRot(), false);
+                replayViewer.teleportTo(currentLevel, follow.getX(), follow.getY(), follow.getZ(),
+                    follow.getYRot(), follow.getXRot());
             }
         }
 
@@ -1731,7 +1711,7 @@ public class ReplayServer extends IntegratedServer {
     }
 
     @Override
-    protected void waitForTasks() {
+    public void waitForTasks() {
         if (this.jumpToTick != -1 || Flashback.EXPORT_JOB != null) {
             // When jumping to a tick in an export, don't wait for the full tick
             LockSupport.parkNanos("waiting for tasks", 100000L);
@@ -1809,7 +1789,7 @@ public class ReplayServer extends IntegratedServer {
     }
 
     @Override
-    public boolean isSingleplayerOwner(NameAndId nameAndId) {
-        return nameAndId.name().equals(REPLAY_VIEWER_NAME);
+    public boolean isSingleplayerOwner(GameProfile gameProfile) {
+        return gameProfile.getName().equals(REPLAY_VIEWER_NAME);
     }
 }

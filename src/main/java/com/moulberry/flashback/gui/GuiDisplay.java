@@ -8,30 +8,25 @@ import com.moulberry.flashback.state.EditorScene;
 import com.moulberry.flashback.state.EditorState;
 import com.moulberry.flashback.state.EditorStateManager;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.screens.MenuScreens;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.HorseInventoryScreen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
-import net.minecraft.client.gui.screens.inventory.NautilusInventoryScreen;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.SimpleContainer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
-import net.minecraft.world.entity.EntityEquipment;
-import net.minecraft.world.entity.animal.equine.AbstractHorse;
-import net.minecraft.world.entity.animal.nautilus.AbstractNautilus;
+import net.minecraft.world.entity.animal.horse.AbstractHorse;
 import net.minecraft.world.entity.player.Inventory;
 import net.minecraft.world.inventory.AbstractContainerMenu;
-import net.minecraft.world.inventory.AbstractMountInventoryMenu;
 import net.minecraft.world.inventory.HorseInventoryMenu;
 import net.minecraft.world.inventory.InventoryMenu;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.inventory.MerchantMenu;
-import net.minecraft.world.inventory.NautilusInventoryMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.trading.MerchantOffers;
@@ -55,10 +50,9 @@ import java.util.Map;
  * slots, labels and progress arrows a player would have seen, because it is the same screen class
  * drawing the same menu - only the contents come from the recording.
  *
- * <p>It is drawn through {@code extractRenderStateWithTooltipAndSubtitles}, which is the call the
- * game itself makes for the screen a player has open. That matters: it is the method that draws the
- * screen's background. Asking only for {@code extractRenderState} produces the contents and none of
- * the container around them, which is what a bare label and a few items floating over the world is.
+ * <p>It uses the immediate-mode screen render path, including the background and widgets, without
+ * installing this screen in the viewer's screen stack. The mouse position is outside the viewport so
+ * the recorded interface cannot receive input or show hover tooltips.
  */
 public final class GuiDisplay {
 
@@ -165,7 +159,7 @@ public final class GuiDisplay {
         }
 
         try {
-            Inventory detached = new Inventory(minecraft.player, new EntityEquipment());
+            Inventory detached = new Inventory(minecraft.player);
 
             if (menuType.startsWith(FlashbackRemoteContainer.MOUNT_TYPE_PREFIX)) {
                 // A mount has no menu type either; the game builds its menu from the entity, and this
@@ -183,11 +177,11 @@ public final class GuiDisplay {
                 return;
             }
 
-            Identifier id = Identifier.tryParse(menuType);
+            ResourceLocation id = ResourceLocation.tryParse(menuType);
             if (id == null) {
                 return;
             }
-            MenuType<?> type = BuiltInRegistries.MENU.getValue(id);
+            MenuType<?> type = BuiltInRegistries.MENU.get(id);
             if (type == null) {
                 return;
             }
@@ -207,10 +201,9 @@ public final class GuiDisplay {
     /**
      * The game's screen for a mount's inventory.
      *
-     * <p>There is no menu type to look up: the client builds a horse's menu, or a nautilus's, out of
-     * the entity the packet names, so this does the same with the entity the recording named. The
-     * mount's own slots are backed by a container made here, so the recorded items can be put into
-     * them without touching the mount the viewer is watching.
+     * <p>There is no menu type to look up: Minecraft 1.21.1 builds a horse's menu from the entity
+     * named by the recording. The mount's slots are backed by a detached container, so recorded
+     * items are drawn without changing the mount the viewer is watching.
      */
     private static void buildMount(Minecraft minecraft, Inventory detached) {
         int entityId = FlashbackRemoteContainer.mountEntityId(menuType);
@@ -221,16 +214,12 @@ public final class GuiDisplay {
 
         Entity mount = minecraft.level.getEntity(entityId);
         SimpleContainer container =
-            new SimpleContainer(AbstractMountInventoryMenu.getInventorySize(columns));
+            new SimpleContainer(columns * 3);
 
         if (mount instanceof AbstractHorse horse) {
             HorseInventoryMenu built = new HorseInventoryMenu(shownId, detached, container, horse, columns);
             menu = built;
             screen = new HorseInventoryScreen(built, detached, horse, columns);
-        } else if (mount instanceof AbstractNautilus nautilus) {
-            NautilusInventoryMenu built = new NautilusInventoryMenu(shownId, detached, container, nautilus, columns);
-            menu = built;
-            screen = new NautilusInventoryScreen(built, detached, nautilus, columns);
         }
     }
 
@@ -430,7 +419,7 @@ public final class GuiDisplay {
     }
 
     /** Draws the container, if there is one. Called from the HUD render pass. */
-    public static void extract(GuiGraphicsExtractor graphics) {
+    public static void render(GuiGraphics graphics) {
         Screen drawing = screen;
         if (drawing == null) {
             return;
@@ -445,7 +434,7 @@ public final class GuiDisplay {
             clear();
             return;
         }
-        if (minecraft.gui != null && minecraft.gui.hud != null && minecraft.gui.hud.isHidden()) {
+        if (minecraft.options.hideGui) {
             // F1 hides the interface; a container the recording had open is part of it.
             return;
         }
@@ -464,11 +453,11 @@ public final class GuiDisplay {
             if (width != screenWidth || height != screenHeight) {
                 screenWidth = width;
                 screenHeight = height;
-                drawing.init(width, height);
+                drawing.init(minecraft, width, height);
             }
             // Far outside the interface, so nothing counts as hovered and no tooltip is drawn: this
             // is a picture, and there is no pointer in it.
-            drawing.extractRenderStateWithTooltipAndSubtitles(graphics, -1, -1, 0.0f);
+            drawing.renderWithTooltip(graphics, -1, -1, 0.0f);
         } catch (Throwable t) {
             Flashback.LOGGER.warn("Could not draw the recorded container {}", menuType, t);
             clear();

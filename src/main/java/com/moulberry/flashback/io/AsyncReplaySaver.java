@@ -17,10 +17,6 @@ import io.netty.buffer.Unpooled;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap;
-import net.fabricmc.fabric.api.networking.v1.context.PacketContext;
-import net.fabricmc.fabric.api.networking.v1.context.PacketContextProvider;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.RegistryFriendlyByteBuf;
@@ -32,7 +28,7 @@ import net.minecraft.network.protocol.configuration.ClientConfigurationPacketLis
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.ClientboundLoginPacket;
-import net.minecraft.util.Util;
+import net.minecraft.Util;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -79,12 +75,9 @@ public class AsyncReplaySaver {
                         }
                     }
 
-                    var context = PacketContext.get();
-                    if (context == null && Minecraft.getInstance().player instanceof PacketContextProvider provider) {
-                        PacketContext.runWithContext(provider, () -> task.accept(replayWriter));
-                    } else {
-                        task.accept(replayWriter);
-                    }
+                    // Keep serialization on this dedicated writer thread. Fabric 0.116's 1.21.1
+                    // networking API does not expose PacketContext/PacketContextProvider.
+                    task.accept(replayWriter);
                 } catch (Throwable t) {
                     this.error.set(t);
                     this.hasStopped.set(true);

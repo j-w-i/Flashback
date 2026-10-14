@@ -5,7 +5,6 @@ import com.moulberry.flashback.ext.LevelChunkExt;
 import com.moulberry.flashback.playback.ReplayServer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Registry;
-import net.minecraft.core.SectionPos;
 import net.minecraft.util.profiling.ProfilerFiller;
 import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.ChunkPos;
@@ -36,8 +35,8 @@ public abstract class MixinLevelChunk extends ChunkAccess implements LevelChunkE
     @Final
     private Level level;
 
-    public MixinLevelChunk(ChunkPos chunkPos, UpgradeData upgradeData, LevelHeightAccessor levelHeightAccessor, PalettedContainerFactory palettedContainerFactory, long l, @Nullable LevelChunkSection[] levelChunkSections, @Nullable BlendingData blendingData) {
-        super(chunkPos, upgradeData, levelHeightAccessor, palettedContainerFactory, l, levelChunkSections, blendingData);
+    public MixinLevelChunk(ChunkPos chunkPos, UpgradeData upgradeData, LevelHeightAccessor levelHeightAccessor, Registry<Biome> biomeRegistry, long l, @Nullable LevelChunkSection[] levelChunkSections, @Nullable BlendingData blendingData) {
+        super(chunkPos, upgradeData, levelHeightAccessor, biomeRegistry, l, levelChunkSections, blendingData);
     }
 
     @Shadow
@@ -49,7 +48,6 @@ public abstract class MixinLevelChunk extends ChunkAccess implements LevelChunkE
     @Shadow
     public abstract @Nullable BlockEntity getBlockEntity(BlockPos blockPos, LevelChunk.EntityCreationType entityCreationType);
 
-    @Shadow public abstract void markUnsaved();
 
     @Unique
     private int cachedChunkId = -1;
@@ -64,8 +62,8 @@ public abstract class MixinLevelChunk extends ChunkAccess implements LevelChunkE
         this.cachedChunkId = id;
     }
 
-    @Inject(method = "setBlockState", at = @At("RETURN"))
-    public void setBlockState(BlockPos blockPos, BlockState blockState, int i, CallbackInfoReturnable<BlockState> cir) {
+    @Inject(method = "setBlockState(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;Z)Lnet/minecraft/world/level/block/state/BlockState;", at = @At("RETURN"))
+    public void setBlockState(BlockPos blockPos, BlockState blockState, boolean moved, CallbackInfoReturnable<BlockState> cir) {
         ReplayServer replayServer = Flashback.getReplayServer();
         if (replayServer == null) {
             return;
@@ -113,11 +111,10 @@ public abstract class MixinLevelChunk extends ChunkAccess implements LevelChunkE
         boolean newHasOnlyAir = levelChunkSection.hasOnlyAir();
         if (oldHasOnlyAir != newHasOnlyAir) {
             this.level.getChunkSource().getLightEngine().updateSectionStatus(blockPos, newHasOnlyAir);
-            this.level.getChunkSource().onSectionEmptinessChanged(this.chunkPos.x(), SectionPos.blockToSectionCoord(y), this.chunkPos.z(), newHasOnlyAir);
         }
 
         // Update light
-        if (LightEngine.hasDifferentLightProperties(oldBlockState, blockState)) {
+        if (LightEngine.hasDifferentLightProperties(this, blockPos, oldBlockState, blockState)) {
             if (this.skyLightSources != null) {
                 this.skyLightSources.update(this, localX, y, localZ);
             }
@@ -145,7 +142,7 @@ public abstract class MixinLevelChunk extends ChunkAccess implements LevelChunkE
             }
         }
 
-        this.markUnsaved();
+        this.unsaved = true;
         return oldBlockState;
     }
 

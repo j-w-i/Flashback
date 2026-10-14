@@ -44,7 +44,7 @@ public class ImageFrame implements AutoCloseable {
             for (int x = 0; x < this.width; x++) {
                 long fromOffset = (x + y * (long) this.width) * this.format.bytes();
                 int rgba = this.format.toOpaqueRgbaU8(this.pixels + fromOffset);
-                copy.setPixelABGR(x, y, rgba);
+                copy.setPixelRGBA(x, y, rgba);
             }
         }
         return copy;

@@ -81,7 +81,7 @@ public class CameraOrbitKeyframeType implements KeyframeType<CameraOrbitKeyframe
        }
        if (subject == null) {
            // Nothing identifiable to turn around, so start from wherever the view is looking from.
-           subject = Minecraft.getInstance().gameRenderer.mainCamera().position();
+           subject = Minecraft.getInstance().gameRenderer.getMainCamera().getPosition();
        }
        cameraOrbitCenter[0] = (float) subject.x;
        cameraOrbitCenter[1] = (float) subject.y;

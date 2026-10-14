@@ -3296,7 +3296,8 @@ public class TimelineWindow {
         Vec3 eyes = player.getEyePosition();
         Vec3 delta = eyes.subtract(target);
         if (delta.length() > 3) {
-            player.snapTo(delta.normalize().scale(3).add(target).subtract(0, player.getEyeHeight(), 0));
+            Vec3 repositioned = delta.normalize().scale(3).add(target).subtract(0, player.getEyeHeight(), 0);
+            player.setPos(repositioned.x, repositioned.y, repositioned.z);
         }
         player.lookAt(EntityAnchorArgument.Anchor.EYES, target);
         player.setDeltaMovement(Vec3.ZERO);
@@ -3623,9 +3624,9 @@ public class TimelineWindow {
         }
         replayServer.replayPaused = !replayServer.replayPaused;
         if (!replayServer.replayPaused) {
-            Screen screen = Minecraft.getInstance().gui.screen();
+            Screen screen = Minecraft.getInstance().screen;
             if (screen != null && screen.isPauseScreen()) {
-                Minecraft.getInstance().gui.setScreen(null);
+                Minecraft.getInstance().setScreen(null);
             }
         }
     }

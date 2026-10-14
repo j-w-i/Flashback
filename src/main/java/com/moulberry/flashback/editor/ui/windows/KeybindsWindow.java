@@ -20,7 +20,7 @@ import imgui.moulberry90.flag.ImGuiWindowFlags;
 import imgui.moulberry90.type.ImBoolean;
 import imgui.moulberry90.type.ImString;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.input.InputQuirks;
+import net.minecraft.Util;
 import net.minecraft.client.resources.language.I18n;
 
 import java.util.Set;
@@ -107,9 +107,9 @@ public class KeybindsWindow {
                             boolean superDown = InputHelper.isSuperDownRaw();
 
                             keybind.set(Keybind.FAKE_SCROLL_KEY, shiftDown,
-                                InputQuirks.REPLACE_CTRL_KEY_WITH_CMD_KEY ? superDown : ctrlDown,
+                                Util.getPlatform() == Util.OS.OSX ? superDown : ctrlDown,
                                 altDown,
-                                InputQuirks.REPLACE_CTRL_KEY_WITH_CMD_KEY ? ctrlDown : superDown);
+                                Util.getPlatform() == Util.OS.OSX ? ctrlDown : superDown);
                         }
                     } else if (ImGui.isItemHovered()) {
                         for (int i = 0; i < ImGuiMouseButton.COUNT; i++) {
@@ -120,9 +120,9 @@ public class KeybindsWindow {
                                 boolean superDown = InputHelper.isSuperDownRaw();
 
                                 keybind.set(-i-1, shiftDown,
-                                    InputQuirks.REPLACE_CTRL_KEY_WITH_CMD_KEY ? superDown : ctrlDown,
+                                    Util.getPlatform() == Util.OS.OSX ? superDown : ctrlDown,
                                     altDown,
-                                    InputQuirks.REPLACE_CTRL_KEY_WITH_CMD_KEY ? ctrlDown : superDown);
+                                    Util.getPlatform() == Util.OS.OSX ? ctrlDown : superDown);
                             }
                         }
                     }

@@ -217,7 +217,7 @@ public class AccurateEntityPositionHandler {
 
     private static void applyPosition(Entity entity, double x, double y, double z, float yaw, float pitch) {
         if (!entity.isPassenger() && Minecraft.getInstance().getCameraEntity() == entity && Minecraft.getInstance().options.getCameraType().isFirstPerson()) {
-            entity.snapTo(x, y, z, yaw, pitch);
+            entity.setPos(x, y, z);
         }
 
         entity.setYRot(yaw);

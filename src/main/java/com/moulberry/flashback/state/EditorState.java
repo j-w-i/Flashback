@@ -195,10 +195,13 @@ public class EditorState {
         }
 
         Camera dummyCamera = new Camera();
+        float partialTick = Minecraft.getInstance().getTimer().getGameTimeDeltaPartialTick(false);
+        dummyCamera.setup(level, sourceEntity, false, false, partialTick);
+        // Camera.setup interpolates between eyeHeightOld and eyeHeight. Seed both values for a
+        // freshly-created camera, then set it up again so the audio position is at the entity's eyes.
         dummyCamera.eyeHeight = sourceEntity.getEyeHeight();
-        dummyCamera.setLevel(level);
-        dummyCamera.setEntity(sourceEntity);
-        dummyCamera.update(Minecraft.getInstance().deltaTracker);
+        dummyCamera.tick();
+        dummyCamera.setup(level, sourceEntity, false, false, partialTick);
         return dummyCamera;
     }
 
@@ -515,8 +518,18 @@ public class EditorState {
         return editorState;
     }
 
+    private static boolean isSpectator(Player player) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == player) {
+            return minecraft.gameMode != null && minecraft.gameMode.getPlayerMode() == GameType.SPECTATOR;
+        }
+        var connection = minecraft.getConnection();
+        var playerInfo = connection == null ? null : connection.getPlayerInfo(player.getUUID());
+        return playerInfo != null && playerInfo.getGameMode() == GameType.SPECTATOR;
+    }
+
     public boolean isEntityHidden(Entity entity) {
-        if (this.hideAllSpectators && entity instanceof Player player && player.gameMode() == GameType.SPECTATOR) {
+        if (this.hideAllSpectators && entity instanceof Player player && isSpectator(player)) {
             return true;
         } else {
             return this.hideDuringExport.contains(entity.getUUID());

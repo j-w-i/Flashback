@@ -8,7 +8,6 @@ import imgui.moulberry90.ImGui;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.client.resources.language.I18n;
-import net.minecraft.network.chat.Component;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -71,10 +70,10 @@ public class MainMenuBar {
             if (ImGui.menuItem(I18n.get("flashback.exit_replay") + "##ExitReplay")) {
                 Minecraft minecraft = Minecraft.getInstance();
                 if (minecraft.level != null) {
-                    minecraft.level.disconnect(Component.empty());
+                    minecraft.level.disconnect();
                 }
-                minecraft.disconnectWithProgressScreen();
-                minecraft.gui.setScreen(new SelectReplayScreen(new TitleScreen()));
+                minecraft.disconnect();
+                minecraft.setScreen(new SelectReplayScreen(new TitleScreen()));
             }
             ImGui.endMenu();
         }
@@ -100,7 +99,7 @@ public class MainMenuBar {
         ImGui.separator();
 
         if (ImGui.menuItem(I18n.get("flashback.hide_replay_ui") + "##HideReplayUI")) {
-            Minecraft.getInstance().gui.hud.toggle();
+            Minecraft.getInstance().options.hideGui = !Minecraft.getInstance().options.hideGui;
         }
     }
 

@@ -303,7 +303,7 @@ public class VisualsWindow {
                 if (visuals.overrideTimeOfDay >= 0) {
                     visuals.overrideTimeOfDay = -1;
                 } else {
-                    visuals.overrideTimeOfDay = (int)(Minecraft.getInstance().level.getDefaultClockTime() % 24000);
+                    visuals.overrideTimeOfDay = (int)(Minecraft.getInstance().level.getDayTime() % 24000);
                 }
                 editorState.markDirty();
             }

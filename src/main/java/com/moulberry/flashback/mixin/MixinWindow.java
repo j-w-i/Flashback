@@ -23,7 +23,7 @@ public abstract class MixinWindow implements WindowExt {
     @Shadow private int width;
     @Shadow private int height;
 
-    @Shadow private int guiScale;
+    @Shadow private double guiScale;
 
     @Shadow private int guiScaledWidth;
 
@@ -31,10 +31,6 @@ public abstract class MixinWindow implements WindowExt {
 
     @Shadow
     private int windowedWidth;
-
-    @Shadow
-    @Final
-    private long handle;
 
     @Shadow
     public abstract int getWidth();
@@ -76,8 +72,8 @@ public abstract class MixinWindow implements WindowExt {
             this.overrideFramebufferHeight = -1;
         }
 
-        if (callFramebufferSizeChanged && lastWidth != this.overrideFramebufferWidth && lastHeight != this.overrideFramebufferHeight) {
-            this.eventHandler.framebufferSizeChanged();
+        if (callFramebufferSizeChanged && (lastWidth != this.overrideFramebufferWidth || lastHeight != this.overrideFramebufferHeight)) {
+            this.eventHandler.resizeDisplay();
         }
     }
 
@@ -141,7 +137,7 @@ public abstract class MixinWindow implements WindowExt {
     }
 
     @Inject(method = "setGuiScale", at=@At("HEAD"), cancellable = true)
-    public void setGuiScale(int scale, CallbackInfo ci) {
+    public void setGuiScale(double scale, CallbackInfo ci) {
         if (Flashback.EXPORT_JOB != null && Flashback.EXPORT_JOB.shouldChangeFramebufferSize()) {
             int fbw = Flashback.EXPORT_JOB.getWidth();
             int fbh = Flashback.EXPORT_JOB.getHeight();

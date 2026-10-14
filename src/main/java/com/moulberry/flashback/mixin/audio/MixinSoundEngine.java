@@ -37,10 +37,10 @@ public class MixinSoundEngine {
     }
 
     @Inject(method = "play", at = @At("HEAD"), cancellable = true)
-    public void play(SoundInstance soundInstance, CallbackInfoReturnable<SoundEngine.PlayResult> cir) {
+    public void play(SoundInstance soundInstance, CallbackInfo ci) {
         ReplayServer replayServer = Flashback.getReplayServer();
         if (replayServer != null && Flashback.EXPORT_JOB == null && replayServer.replayPaused) {
-            cir.setReturnValue(SoundEngine.PlayResult.NOT_STARTED);
+            ci.cancel();
         }
     }
 

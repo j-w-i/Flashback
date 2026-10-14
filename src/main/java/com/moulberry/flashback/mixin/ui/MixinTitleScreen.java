@@ -20,7 +20,6 @@ import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -132,14 +131,14 @@ public class MixinTitleScreen extends Screen {
                 if (!overlapsWithExistingButton) {
                     if (this.openSelectReplayScreenButton == null) {
                         this.openSelectReplayScreenButton = new FlashbackButton(x, y, size, size, Component.translatable("flashback.open_replays"), button -> {
-                            List<String> incompatibleMods = this.minecraft.hasShiftDown() ? List.of() : Flashback.getReplayIncompatibleMods();
+                            List<String> incompatibleMods = Screen.hasShiftDown() ? List.of() : Flashback.getReplayIncompatibleMods();
 
                             if (incompatibleMods.isEmpty()) {
-                                this.minecraft.gui.setScreen(new SelectReplayScreen(this));
+                                this.minecraft.setScreen(new SelectReplayScreen(this));
                             } else {
                                 String mods = StringUtils.join(incompatibleMods, ", ");
                                 Component description = Component.translatable("flashback.incompatible_with_viewing_description").append(Component.literal(mods).withStyle(ChatFormatting.RED));
-                                this.minecraft.gui.setScreen(new AlertScreen(() -> Minecraft.getInstance().gui.setScreen(this),
+                                this.minecraft.setScreen(new AlertScreen(() -> Minecraft.getInstance().setScreen(this),
                                     Component.translatable("flashback.incompatible_with_viewing"), description));
                             }
 
@@ -164,7 +163,7 @@ public class MixinTitleScreen extends Screen {
     }
 
     @Inject(method = "createNormalMenuOptions", at = @At("HEAD"))
-    public void createNormalMenuOptions(int i, int j, CallbackInfoReturnable<Integer> cir) {
+    public void createNormalMenuOptions(int i, int j, CallbackInfo ci) {
         this.normalMenuWidgets.clear();
     }
 

@@ -22,7 +22,7 @@ import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.game.ClientGamePacketListener;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
 import net.minecraft.network.protocol.game.GameProtocols;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 
 import java.io.BufferedOutputStream;
 import java.io.FileOutputStream;
@@ -186,8 +186,8 @@ public class ReplayCombiner {
                 int actions = inputBuf.readVarInt();
                 outputBuf.writeVarInt(actions);
                 for (int i = 0; i < actions; i++) {
-                    Identifier actionName = inputBuf.readIdentifier();
-                    outputBuf.writeIdentifier(actionName);
+                    ResourceLocation actionName = inputBuf.readResourceLocation();
+                    outputBuf.writeResourceLocation(actionName);
 
                     Action action = ActionRegistry.getAction(actionName);
 

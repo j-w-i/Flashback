@@ -7,9 +7,7 @@ import com.mojang.blaze3d.vertex.ByteBufferBuilder;
 import com.mojang.blaze3d.vertex.DefaultVertexFormat;
 import com.mojang.blaze3d.vertex.MeshData;
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.renderpearl.api.buffers.GpuBuffer;
-import com.mojang.renderpearl.api.commands.RenderPass;
-import com.mojang.renderpearl.api.pipeline.PrimitiveTopology;
+import com.mojang.blaze3d.vertex.VertexFormat;
 import com.moulberry.flashback.Utils;
 import com.moulberry.flashback.combo_options.Sizing;
 import com.moulberry.flashback.editor.ui.windows.TimelineWindow;
@@ -20,18 +18,14 @@ import com.moulberry.flashback.state.EditorScene;
 import com.moulberry.flashback.state.EditorState;
 import com.moulberry.flashback.state.EditorStateManager;
 import com.moulberry.flashback.state.KeyframeTrack;
+import net.minecraft.client.Camera;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.renderer.fog.FogRenderer;
-import net.minecraft.client.renderer.rendertype.RenderTypes;
-import net.minecraft.client.renderer.state.level.CameraRenderState;
+import net.minecraft.client.renderer.RenderType;
 import net.minecraft.world.phys.Vec3;
+import org.joml.Matrix4f;
 import org.joml.Quaterniond;
 import org.joml.Quaternionf;
 import org.joml.Vector3d;
-
-import java.util.Objects;
-import java.util.Optional;
-import java.util.OptionalDouble;
 
 public class CameraPath {
 
@@ -41,10 +35,10 @@ public class CameraPath {
     private static int lastEditorStateModCount = 0;
     private static int lastCursorTick = 0;
 
-    public static void renderCameraPath(PoseStack poseStack, CameraRenderState camera, ReplayServer replayServer) {
+    public static void renderCameraPath(PoseStack poseStack, Camera camera, ReplayServer replayServer) {
         RenderSystem.assertOnRenderThread();
 
-        if (Minecraft.getInstance().gui.hud.isHidden()) {
+        if (Minecraft.getInstance().options.hideGui) {
             return;
         }
 
@@ -65,8 +59,8 @@ public class CameraPath {
                 lastCameraPathArgs = cameraPathArgs;
 
                 try (ByteBufferBuilder byteBufferBuilder = new ByteBufferBuilder(1024)) {
-                    BufferBuilder bufferBuilder = new BufferBuilder(byteBufferBuilder, PrimitiveTopology.LINES, DefaultVertexFormat.POSITION_COLOR_NORMAL_LINE_WIDTH);
-                    Vector3d basePosition = new Vector3d(camera.pos.x, camera.pos.y, camera.pos.z);
+                    BufferBuilder bufferBuilder = new BufferBuilder(byteBufferBuilder, VertexFormat.Mode.LINES, DefaultVertexFormat.POSITION_COLOR_NORMAL);
+                    Vector3d basePosition = new Vector3d(camera.getPosition().x, camera.getPosition().y, camera.getPosition().z);
                     buildCameraPath(state, basePosition.mul(-1, new Vector3d()), cameraPathArgs, bufferBuilder);
 
                     if (cameraPathVertexBuffer != null) {
@@ -77,7 +71,7 @@ public class CameraPath {
                     MeshData meshData = bufferBuilder.build();
                     if (meshData != null) {
                         CameraPath.basePosition = basePosition;
-                        cameraPathVertexBuffer = new FlashbackDrawBuffer(GpuBuffer.USAGE_MAP_WRITE);
+                        cameraPathVertexBuffer = new FlashbackDrawBuffer(0);
                         cameraPathVertexBuffer.upload(meshData);
                     }
                 }
@@ -91,18 +85,22 @@ public class CameraPath {
             return;
         }
 
-        var oldFog = RenderSystem.getShaderFog();
-        RenderSystem.setShaderFog(Minecraft.getInstance().gameRenderer.fogRenderer.getBuffer(FogRenderer.FogMode.NONE));
+        float oldFogStart = RenderSystem.getShaderFogStart();
+        float oldFogEnd = RenderSystem.getShaderFogEnd();
+        RenderSystem.disableCull();
+        RenderSystem.enableBlend();
+        RenderSystem.defaultBlendFunc();
+        RenderSystem.lineWidth(2.0f);
+        RenderSystem.setShaderFogStart(Float.MAX_VALUE);
+        RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
 
         poseStack.pushPose();
-        poseStack.translate(basePosition.x-camera.pos.x,
-            basePosition.y-camera.pos.y+1.62f, basePosition.z-camera.pos.z);
+        poseStack.translate(basePosition.x - camera.getPosition().x,
+            basePosition.y - camera.getPosition().y + camera.eyeHeight, basePosition.z - camera.getPosition().z);
 
-        var stack = RenderSystem.getModelViewStack();
-        stack.pushMatrix();
-        stack.set(poseStack.last().pose());
-
-        cameraPathVertexBuffer.draw();
+        Matrix4f oldModelView = new Matrix4f(RenderSystem.getModelViewMatrix());
+        RenderSystem.getModelViewMatrix().set(poseStack.last().pose());
+        cameraPathVertexBuffer.drawRenderType(RenderType.lines());
 
         if (replayServer.replayPaused) {
             var handler = new CapturingKeyframeHandler();
@@ -113,30 +111,24 @@ public class CameraPath {
             state.applyKeyframes(fovHandler, replayTick);
             if (handler.position != null) {
                 try (ByteBufferBuilder byteBufferBuilder = new ByteBufferBuilder(1024)) {
-                    BufferBuilder bufferBuilder = new BufferBuilder(byteBufferBuilder, PrimitiveTopology.LINES, DefaultVertexFormat.POSITION_COLOR_NORMAL_LINE_WIDTH);
+                    BufferBuilder bufferBuilder = new BufferBuilder(byteBufferBuilder, VertexFormat.Mode.LINES, DefaultVertexFormat.POSITION_COLOR_NORMAL);
                     renderCamera(bufferBuilder, handler.position.sub(basePosition, new Vector3d()), handler.angle, fovHandler.fov,
                         getCameraColour(false, true), 1.0f);
 
-                    var mainTarget = Minecraft.getInstance().gameRenderer.mainRenderTarget();
-                    try (RenderPass renderPass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(
-                        () -> "flashback camera path lines",
-                        Objects.requireNonNull(mainTarget.getColorTextureView()), Optional.empty(),
-                        Objects.requireNonNull(mainTarget.getDepthTextureView()), OptionalDouble.empty())
-                    ) {
-                        try (FlashbackDrawBuffer drawBuffer = new FlashbackDrawBuffer(GpuBuffer.USAGE_MAP_WRITE)) {
-                            drawBuffer.upload(bufferBuilder.buildOrThrow());
-                            drawBuffer.drawRenderType(RenderTypes.LINES.prepare(), renderPass);
-                        }
+                    try (FlashbackDrawBuffer drawBuffer = new FlashbackDrawBuffer(0)) {
+                        drawBuffer.upload(bufferBuilder.buildOrThrow());
+                        RenderSystem.lineWidth(2.0f);
+                        drawBuffer.drawRenderType(RenderType.lines());
                     }
                 }
             }
         }
 
-        stack.popMatrix();
-
+        RenderSystem.getModelViewMatrix().set(oldModelView);
         poseStack.popPose();
-
-        RenderSystem.setShaderFog(oldFog);
+        RenderSystem.setShaderFogStart(oldFogStart);
+        RenderSystem.setShaderFogEnd(oldFogEnd);
+        RenderSystem.enableCull();
     }
 
     private record CameraPathArgs(int lastLastCameraTick, int lastCameraTick, int nextCameraTick, int nextNextCameraTick) {}
@@ -280,12 +272,10 @@ public class CameraPath {
                 dy *= distanceInv;
                 dz *= distanceInv;
 
-                bufferBuilder.addVertex((float) lastPosition.x, (float) lastPosition.y, (float) lastPosition.z).setColor(1.0f, 1.0f, 0.1f, 0.0f)
-                             .setNormal((float) dx, (float) dy, (float) dz)
-                             .setLineWidth(2f);
-                bufferBuilder.addVertex((float) position.x, (float) position.y, (float) position.z).setColor(1.0f, 1.0f, 0.1f, opacity)
-                             .setNormal((float) dx, (float) dy, (float) dz)
-                             .setLineWidth(2f);
+                bufferBuilder.addVertex((float) lastPosition.x, (float) lastPosition.y, (float) lastPosition.z)
+                    .setColor(1.0f, 1.0f, 0.1f, 0.0f).setNormal((float) dx, (float) dy, (float) dz);
+                bufferBuilder.addVertex((float) position.x, (float) position.y, (float) position.z)
+                    .setColor(1.0f, 1.0f, 0.1f, opacity).setNormal((float) dx, (float) dy, (float) dz);
             }
 
             lastPosition = position;
@@ -296,7 +286,7 @@ public class CameraPath {
     private static void renderCamera(BufferBuilder bufferBuilder, Vector3d position, Quaterniond angle, float fov, int rgb, float opacity) {
         cameraPoseStack.pushPose();
         cameraPoseStack.translate(position.x, position.y, position.z);
-        cameraPoseStack.last().rotate(new Quaternionf(angle));
+        cameraPoseStack.mulPose(new Quaternionf(angle));
 
         PoseStack.Pose pose = cameraPoseStack.last();
 

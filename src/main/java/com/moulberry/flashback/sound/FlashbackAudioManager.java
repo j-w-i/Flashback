@@ -7,6 +7,8 @@ import com.mojang.blaze3d.audio.Channel;
 import com.mojang.blaze3d.audio.Library;
 import com.moulberry.flashback.Flashback;
 import com.moulberry.flashback.editor.ui.ReplayUI;
+import com.moulberry.flashback.mixin.audio.ChannelAccessor;
+import com.moulberry.flashback.mixin.audio.SoundEngineAccessor;
 import net.minecraft.client.sounds.ChannelAccess;
 import net.minecraft.client.sounds.SoundEngine;
 import net.minecraft.world.phys.Vec3;
@@ -101,7 +103,7 @@ public class FlashbackAudioManager {
         instance.claimed = true;
 
         if (instance.channelHandle == null || instance.channelHandle.isStopped()) {
-            var channelAccess = soundEngine.channelAccess;
+            var channelAccess = ((SoundEngineAccessor) soundEngine).flashback$getChannelAccess();
             var handleFuture = channelAccess.createHandle(Library.Pool.STATIC);
             instance.channelHandle = handleFuture.join();
             if (instance.channelHandle == null) {
@@ -130,7 +132,7 @@ public class FlashbackAudioManager {
                     }
                 }
 
-                AL10.alSourcef(channel.source, AL11.AL_SEC_OFFSET, seconds);
+                AL10.alSourcef(((ChannelAccessor) (Object) channel).flashback$getSource(), AL11.AL_SEC_OFFSET, seconds);
 
                 channel.play();
             });
@@ -142,9 +144,9 @@ public class FlashbackAudioManager {
                     channel.setPitch(clampedSpeed);
                 }
 
-                float secOffset = AL10.alGetSourcef(channel.source, AL11.AL_SEC_OFFSET);
+                float secOffset = AL10.alGetSourcef(((ChannelAccessor) (Object) channel).flashback$getSource(), AL11.AL_SEC_OFFSET);
                 if (Math.abs(secOffset - seconds) > 0.05f) {
-                    AL10.alSourcef(channel.source, AL11.AL_SEC_OFFSET, seconds);
+                    AL10.alSourcef(((ChannelAccessor) (Object) channel).flashback$getSource(), AL11.AL_SEC_OFFSET, seconds);
                 }
             });
         }

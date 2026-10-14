@@ -1,11 +1,8 @@
 package com.moulberry.flashback.record;
 
-import com.google.common.collect.ImmutableMultimap;
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
 import com.mojang.authlib.GameProfile;
-import com.mojang.authlib.properties.Property;
-import com.mojang.authlib.properties.PropertyMap;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.datafixers.util.Pair;
 import com.moulberry.flashback.Flashback;
@@ -15,7 +12,6 @@ import com.moulberry.flashback.RegistryMetaHelper;
 import com.moulberry.flashback.action.*;
 import com.moulberry.flashback.compat.BobbyUtil;
 import com.moulberry.flashback.compat.DistantHorizonsSupport;
-import com.moulberry.flashback.ext.ClientClockManagerExt;
 import com.moulberry.flashback.gui.InventoryMenuSlots;
 import com.moulberry.flashback.io.AsyncReplaySaver;
 import com.moulberry.flashback.io.ReplayWriter;
@@ -23,9 +19,6 @@ import com.moulberry.flashback.mixin.compat.bobby.FakeChunkManagerAccessor;
 import com.moulberry.flashback.packet.FlashbackAccurateEntityPosition;
 import io.netty.buffer.ByteBuf;
 import it.unimi.dsi.fastutil.longs.LongOpenHashSet;
-import net.fabricmc.fabric.api.networking.v1.context.PacketContext;
-import net.fabricmc.fabric.api.networking.v1.context.PacketContextProvider;
-import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.SharedConstants;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.Screenshot;
@@ -82,7 +75,7 @@ import net.minecraft.world.food.FoodData;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.ChunkPos;
 import net.minecraft.world.level.chunk.DataLayer;
-import net.minecraft.world.level.gamerules.GameRules;
+import net.minecraft.world.level.GameRules;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.border.WorldBorder;
@@ -167,9 +160,9 @@ public class Recorder {
         this.configurationPacketCodec = ConfigurationProtocols.CLIENTBOUND.codec();
         this.gamePacketCodec = GameProtocols.CLIENTBOUND_TEMPLATE.bind(RegistryFriendlyByteBuf.decorator(registryAccess)).codec();
 
-        this.metadata.dataVersion = SharedConstants.getCurrentVersion().dataVersion().version();
+        this.metadata.dataVersion = SharedConstants.getCurrentVersion().getDataVersion().getVersion();
         this.metadata.protocolVersion = SharedConstants.getProtocolVersion();
-        this.metadata.versionString = FabricLoader.getInstance().getRawGameVersion();
+        this.metadata.versionString = SharedConstants.VERSION_STRING;
 
         if (Flashback.isBobbyLoaded) {
             try {
@@ -303,7 +296,9 @@ public class Recorder {
     }
 
     public void endTickWithContext(boolean close) {
-        this.runWithClientPacketContext(() -> this.endTick(close));
+        // Fabric 0.116's 1.21.1 networking API has no PacketContext/Provider. Preserve the
+        // caller's thread and run the tick flush synchronously as before.
+        this.endTick(close);
     }
 
     private void endTick(boolean close) {
@@ -326,14 +321,14 @@ public class Recorder {
 
         Minecraft minecraft = Minecraft.getInstance();
 
-        boolean isLevelLoaded = !(Minecraft.getInstance().gui.screen() instanceof LevelLoadingScreen);
+        boolean isLevelLoaded = !(Minecraft.getInstance().screen instanceof LevelLoadingScreen);
         boolean changedDimensions = false;
 
         int localPlayerUpdatesPerSecond = Flashback.getConfig().recording.localPlayerUpdatesPerSecond;
         boolean trackAccurateFirstPersonPosition = localPlayerUpdatesPerSecond > 20;
         boolean wroteNewTick = false;
 
-        if (minecraft.level != null && (minecraft.gui.overlay() == null || !minecraft.gui.overlay().isPausing()) &&
+        if (minecraft.level != null && (minecraft.getOverlay() == null) &&
                 !minecraft.isPaused() && !this.isPaused && isLevelLoaded) {
             this.writeEntityPositions();
             this.writeLocalData();
@@ -351,8 +346,8 @@ public class Recorder {
                 this.asyncReplaySaver.writeIcon(this.finishedScreenshot);
                 this.finishedScreenshot = null;
             }
-            if (!this.hasTakenScreenshot && ((this.writtenTicks >= 20 && minecraft.gui.screen() == null) || close)) {
-                Screenshot.takeScreenshot(minecraft.gameRenderer.mainRenderTarget(), image -> this.finishedScreenshot = image);
+            if (!this.hasTakenScreenshot && ((this.writtenTicks >= 20 && minecraft.screen == null) || close)) {
+                this.finishedScreenshot = Screenshot.takeScreenshot(minecraft.getMainRenderTarget());
                 this.hasTakenScreenshot = true;
             }
 
@@ -436,7 +431,7 @@ public class Recorder {
         if (this.lastPlayerPositionAndAngle != null) {
             int divisions = localPlayerUpdatesPerSecond / 20;
             Minecraft.getInstance().mouseHandler.handleAccumulatedMovement();
-            float nextPartialTick = Minecraft.getInstance().deltaTracker.getGameTimeDeltaPartialTick(true);
+            float nextPartialTick = Minecraft.getInstance().timer.getGameTimeDeltaPartialTick(true);
 
             double nextX = Mth.lerp(nextPartialTick, player.xo, player.getX());
             double nextY = Mth.lerp(nextPartialTick, player.yo, player.getY());
@@ -556,9 +551,9 @@ public class Recorder {
                 gamePackets.add(new ClientboundSetHealthPacket(player.getHealth(), foodData.getFoodLevel(), foodData.getSaturationLevel()));
             }
 
-            int selectedSlot = player.getInventory().getSelectedSlot();
+            int selectedSlot = player.getInventory().selected;
             if (selectedSlot != this.lastSelectedSlot) {
-                gamePackets.add(new ClientboundSetHeldSlotPacket(selectedSlot));
+                gamePackets.add(new ClientboundSetCarriedItemPacket(selectedSlot));
                 this.lastSelectedSlot = selectedSlot;
             }
         }
@@ -635,14 +630,15 @@ public class Recorder {
             this.lastDestroyProgress = destroyProgress;
         }
 
-        // Update swinging
-        var currentSwing = player.getCurrentSwing();
-        int swingTime = player.swingState.ticks;
-        if (currentSwing != null && (!this.wasSwinging || this.lastSwingTime > swingTime)) {
-            gamePackets.add(new ClientboundSwingAnimationPacket(player, currentSwing.hand(), currentSwing.animation()));
+        // Update swinging. 1.21.1 exposes the legacy swing state rather than the newer
+        // SwingState/animation abstraction.
+        int swingTime = player.swingTime;
+        if (player.swinging && (!this.wasSwinging || this.lastSwingTime > swingTime)) {
+            int animation = player.swingingArm == InteractionHand.OFF_HAND ? 3 : 0;
+            gamePackets.add(new ClientboundAnimatePacket(player, animation));
         }
         this.lastSwingTime = swingTime;
-        this.wasSwinging = currentSwing != null;
+        this.wasSwinging = player.swinging;
 
         gamePackets.add(new ClientboundSetEntityMotionPacket(player.getId(), player.getDeltaMovement()));
 
@@ -796,10 +792,9 @@ public class Recorder {
 
             GameProfile currentProfile = localPlayer.getGameProfile();
 
-            ImmutableMultimap.Builder<String, Property> propertyMapBuilder = ImmutableMultimap.builder();
-            propertyMapBuilder.putAll(Minecraft.getInstance().getGameProfile().properties());
-            propertyMapBuilder.putAll(currentProfile.properties());
-            GameProfile newProfile = new GameProfile(currentProfile.id(), currentProfile.name(), new PropertyMap(propertyMapBuilder.build()));
+            GameProfile newProfile = new GameProfile(currentProfile.getId(), currentProfile.getName());
+            newProfile.getProperties().putAll(Minecraft.getInstance().getGameProfile().getProperties());
+            newProfile.getProperties().putAll(currentProfile.getProperties());
             int gameModeId = Minecraft.getInstance().gameMode.getPlayerMode().getId();
 
             this.asyncReplaySaver.submit(writer -> {
@@ -824,21 +819,12 @@ public class Recorder {
         }
     }
 
-    private void runWithClientPacketContext(Runnable runnable) {
-        var context = PacketContext.get();
-        if (context == null && Minecraft.getInstance().player instanceof PacketContextProvider provider) {
-            PacketContext.runWithContext(provider, runnable);
-        } else {
-            runnable.run();
-        }
-    }
-
     public void writeLevelEvent(int type, BlockPos blockPos, int data, boolean globalEvent) {
         if (!this.readyToWrite()) {
             return;
         }
 
-        runWithClientPacketContext(() -> this.pendingPackets.add(new PacketWithPhase(new ClientboundLevelEventPacket(type, blockPos, data, globalEvent), ConnectionProtocol.PLAY)));
+        this.pendingPackets.add(new PacketWithPhase(new ClientboundLevelEventPacket(type, blockPos, data, globalEvent), ConnectionProtocol.PLAY));
     }
 
     public void writeSound(Holder<SoundEvent> holder, SoundSource soundSource, double x, double y, double z, float volume, float pitch, long seed) {
@@ -846,7 +832,7 @@ public class Recorder {
             return;
         }
 
-        runWithClientPacketContext(() -> this.pendingPackets.add(new PacketWithPhase(new ClientboundSoundPacket(holder, soundSource, x, y, z, volume, pitch, seed), ConnectionProtocol.PLAY)));
+        this.pendingPackets.add(new PacketWithPhase(new ClientboundSoundPacket(holder, soundSource, x, y, z, volume, pitch, seed), ConnectionProtocol.PLAY));
     }
 
     public void writeEntitySound(Holder<SoundEvent> holder, SoundSource soundSource, Entity entity, float volume, float pitch, long seed) {
@@ -854,7 +840,7 @@ public class Recorder {
             return;
         }
 
-        runWithClientPacketContext(() -> this.pendingPackets.add(new PacketWithPhase(new ClientboundSoundEntityPacket(holder, soundSource, entity, volume, pitch, seed), ConnectionProtocol.PLAY)));
+        this.pendingPackets.add(new PacketWithPhase(new ClientboundSoundEntityPacket(holder, soundSource, entity, volume, pitch, seed), ConnectionProtocol.PLAY));
     }
 
     public void writePacketAsync(Packet<?> packet, ConnectionProtocol phase) {
@@ -878,7 +864,8 @@ public class Recorder {
         // Convert player chat packets into system chat packets
         if (packet instanceof ClientboundPlayerChatPacket playerChatPacket) {
             try {
-                Component content = playerChatPacket.unsignedContent().orElse(Component.literal(playerChatPacket.body().content()));
+                Component unsignedContent = playerChatPacket.unsignedContent();
+                Component content = unsignedContent != null ? unsignedContent : Component.literal(playerChatPacket.body().content());
                 Component decorated = playerChatPacket.chatType().decorate(content);
                 packet = new ClientboundSystemChatPacket(decorated, false);
             } catch (Exception e) {
@@ -920,7 +907,7 @@ public class Recorder {
             // If we skipped a packet, we should run all updates to ensure that
             // the packet changes have been applied to the game state.
             this.skippedPacketDueToWaitingForWrite = false;
-            minecraft.runAllTasks();
+            // The queued client tasks are drained by the normal client tick in 1.21.1.
         }
 
         if (asActualSnapshot) {
@@ -978,11 +965,10 @@ public class Recorder {
         // Login packet
         long hashedSeed = level.getBiomeManager().biomeZoomSeed;
         CommonPlayerSpawnInfo commonPlayerSpawnInfo = new CommonPlayerSpawnInfo(level.dimensionTypeRegistration(), level.dimension(), hashedSeed,
-            gameMode.getPlayerMode(), Optional.ofNullable(gameMode.getPreviousPlayerMode()), level.isDebug(), level.getLevelData().isFlat, Optional.empty(), 0,
-                level.getSeaLevel());
+            gameMode.getPlayerMode(), gameMode.getPreviousPlayerMode(), level.isDebug(), level.getLevelData().isFlat, Optional.empty(), 0);
         var loginPacket = new ClientboundLoginPacket(localPlayer.getId(), level.getLevelData().isHardcore(), connection.levels(),
             1, minecraft.options.getEffectiveRenderDistance(), level.getServerSimulationDistance(),
-            localPlayer.isReducedDebugInfo(), localPlayer.shouldShowDeathScreen(), localPlayer.getDoLimitedCrafting(), commonPlayerSpawnInfo, false, false);
+            localPlayer.isReducedDebugInfo(), localPlayer.shouldShowDeathScreen(), localPlayer.getDoLimitedCrafting(), commonPlayerSpawnInfo, false);
         gamePackets.add(loginPacket);
 
         // Write local player
@@ -996,66 +982,66 @@ public class Recorder {
         Set<UUID> addedEntries = new HashSet<>();
         Set<UUID> addedWithValidProperties = new HashSet<>();
         for (PlayerInfo info : connection.getListedOnlinePlayers()) {
-            boolean isValidProperties = !info.getProfile().properties().isEmpty();
-            if (addedEntries.add(info.getProfile().id())) {
-                infoUpdatePacket.entries.add(new ClientboundPlayerInfoUpdatePacket.Entry(info.getProfile().id(),
-                    info.getProfile(), true, info.getLatency(), info.getGameMode(), info.getTabListDisplayName(), info.showHat(), info.getTabListOrder(), null));
+            boolean isValidProperties = !info.getProfile().getProperties().isEmpty();
+            if (addedEntries.add(info.getProfile().getId())) {
+                infoUpdatePacket.entries.add(new ClientboundPlayerInfoUpdatePacket.Entry(info.getProfile().getId(),
+                    info.getProfile(), true, info.getLatency(), info.getGameMode(), info.getTabListDisplayName(), null));
                 if (isValidProperties) {
-                    addedWithValidProperties.add(info.getProfile().id());
+                    addedWithValidProperties.add(info.getProfile().getId());
                 }
             }
         }
         for (PlayerInfo info : connection.getOnlinePlayers()) {
-            boolean isValidProperties = !info.getProfile().properties().isEmpty();
+            boolean isValidProperties = !info.getProfile().getProperties().isEmpty();
             boolean add = false;
-            if (addedEntries.add(info.getProfile().id())) {
+            if (addedEntries.add(info.getProfile().getId())) {
                 add = true;
-            } else if (isValidProperties && !addedWithValidProperties.contains(info.getProfile().id())) {
-                infoUpdatePacket.entries.removeIf(entry -> entry.profileId().equals(info.getProfile().id()));
+            } else if (isValidProperties && !addedWithValidProperties.contains(info.getProfile().getId())) {
+                infoUpdatePacket.entries.removeIf(entry -> entry.profileId().equals(info.getProfile().getId()));
                 add = true;
             }
             if (add) {
-                infoUpdatePacket.entries.add(new ClientboundPlayerInfoUpdatePacket.Entry(info.getProfile().id(),
-                    info.getProfile(), false, info.getLatency(), info.getGameMode(), info.getTabListDisplayName(), info.showHat(), info.getTabListOrder(), null));
+                infoUpdatePacket.entries.add(new ClientboundPlayerInfoUpdatePacket.Entry(info.getProfile().getId(),
+                    info.getProfile(), false, info.getLatency(), info.getGameMode(), info.getTabListDisplayName(), null));
                 if (isValidProperties) {
-                    addedWithValidProperties.add(info.getProfile().id());
+                    addedWithValidProperties.add(info.getProfile().getId());
                 }
             }
         }
         for (AbstractClientPlayer player : level.players()) {
             PlayerInfo info = player.getPlayerInfo();
             if (info != null) {
-                boolean isValidProperties = !info.getProfile().properties().isEmpty();
+                boolean isValidProperties = !info.getProfile().getProperties().isEmpty();
                 boolean add = false;
-                if (addedEntries.add(info.getProfile().id())) {
+                if (addedEntries.add(info.getProfile().getId())) {
                     add = true;
-                } else if (isValidProperties && !addedWithValidProperties.contains(info.getProfile().id())) {
-                    infoUpdatePacket.entries.removeIf(entry -> entry.profileId().equals(info.getProfile().id()));
+                } else if (isValidProperties && !addedWithValidProperties.contains(info.getProfile().getId())) {
+                    infoUpdatePacket.entries.removeIf(entry -> entry.profileId().equals(info.getProfile().getId()));
                     add = true;
                 }
                 if (add) {
                     infoUpdatePacket.entries.add(new ClientboundPlayerInfoUpdatePacket.Entry(player.getUUID(),
-                        player.getGameProfile(), false, info.getLatency(), info.getGameMode(), info.getTabListDisplayName(), info.showHat(), info.getTabListOrder(), null));
+                        player.getGameProfile(), false, info.getLatency(), info.getGameMode(), info.getTabListDisplayName(), null));
                     if (isValidProperties) {
-                        addedWithValidProperties.add(info.getProfile().id());
+                        addedWithValidProperties.add(info.getProfile().getId());
                     }
                 }
             } else if (addedEntries.add(player.getUUID())) {
                 infoUpdatePacket.entries.add(new ClientboundPlayerInfoUpdatePacket.Entry(player.getUUID(),
-                    player.getGameProfile(), false, 0, GameType.DEFAULT_MODE, player.getDisplayName(), true, 0, null));
+                    player.getGameProfile(), false, 0, GameType.DEFAULT_MODE, player.getDisplayName(), null));
             }
         }
         gamePackets.add(infoUpdatePacket);
 
         // Tab list
-        PlayerTabOverlay playerTabOverlay = minecraft.gui.hud.getTabList();
+        PlayerTabOverlay playerTabOverlay = minecraft.gui.getTabList();
         gamePackets.add(new ClientboundTabListPacket(
             playerTabOverlay.header != null ? playerTabOverlay.header : Component.empty(),
             playerTabOverlay.footer != null ? playerTabOverlay.footer : Component.empty()
         ));
 
         // Boss bar
-        BossHealthOverlay bossOverlay = minecraft.gui.hud.getBossOverlay();
+        BossHealthOverlay bossOverlay = minecraft.gui.getBossOverlay();
         for (LerpingBossEvent event : bossOverlay.events.values()) {
             gamePackets.add(ClientboundBossEventPacket.createAddPacket(event));
         }
@@ -1087,8 +1073,8 @@ public class Recorder {
         // Level info
         WorldBorder worldBorder = level.getWorldBorder();
         gamePackets.add(new ClientboundInitializeBorderPacket(worldBorder));
-        gamePackets.add(new ClientboundSetTimePacket(level.getGameTime(), ((ClientClockManagerExt)level.clockManager()).flashback$encodeClockUpdates()));
-        gamePackets.add(new ClientboundSetDefaultSpawnPositionPacket(level.getRespawnData()));
+        gamePackets.add(new ClientboundSetTimePacket(level.getGameTime(), level.getDayTime(), level.getGameRules().getBoolean(GameRules.RULE_DAYLIGHT)));
+        gamePackets.add(new ClientboundSetDefaultSpawnPositionPacket(level.getSharedSpawnPos(), level.getSharedSpawnAngle()));
         if (level.isRaining()) {
             gamePackets.add(new ClientboundGameEventPacket(ClientboundGameEventPacket.START_RAINING, 0.0f));
         } else {
@@ -1097,15 +1083,13 @@ public class Recorder {
         gamePackets.add(new ClientboundGameEventPacket(ClientboundGameEventPacket.RAIN_LEVEL_CHANGE, level.getRainLevel(1.0f)));
         gamePackets.add(new ClientboundGameEventPacket(ClientboundGameEventPacket.THUNDER_LEVEL_CHANGE, level.getThunderLevel(1.0f)));
 
-        // Force light updates
+        // Drain queued client light work before writing the recorder snapshot.
         try {
-            while (true) {
-                Runnable runnable = level.lightUpdateQueue.poll();
-                if (runnable == null) {
+            for (int i = 0; i < 1000; i++) {
+                if (level.isLightUpdateQueueEmpty()) {
                     break;
-                } else {
-                    runnable.run();
                 }
+                level.pollLightUpdates();
             }
         } catch (Exception e) {
             Flashback.LOGGER.error("Error while running light tasks", e);
@@ -1134,9 +1118,9 @@ public class Recorder {
             this.lastSaturationLevel = foodData.getSaturationLevel();
             gamePackets.add(new ClientboundSetHealthPacket(localPlayer.getHealth(), foodData.getFoodLevel(), foodData.getSaturationLevel()));
 
-            int selectedSlot = localPlayer.getInventory().getSelectedSlot();
+            int selectedSlot = localPlayer.getInventory().selected;
             this.lastSelectedSlot = selectedSlot;
-            gamePackets.add(new ClientboundSetHeldSlotPacket(selectedSlot));
+            gamePackets.add(new ClientboundSetCarriedItemPacket(selectedSlot));
 
             for (int i = 0; i < 9; i++) {
                 ItemStack hotbarItem = localPlayer.getInventory().getItem(i);
@@ -1242,7 +1226,7 @@ public class Recorder {
             LevelChunk chunk = chunksList.get(i);
             if (chunk != null) {
                 chunks.add(chunk);
-                seenChunkPositions.add(chunk.getPos().pack());
+                seenChunkPositions.add(chunk.getPos().toLong());
             }
         }
 
@@ -1260,8 +1244,8 @@ public class Recorder {
             int centerX = localPlayer.getBlockX() >> 4;
             int centerZ = localPlayer.getBlockZ() >> 4;
             levelChunkPackets.sort(Comparator.comparingInt(task -> {
-                int dx = task.x() - centerX;
-                int dz = task.z() - centerZ;
+                int dx = task.getX() - centerX;
+                int dz = task.getZ() - centerZ;
                 return dx*dx + dz*dz;
             }));
 
@@ -1288,8 +1272,8 @@ public class Recorder {
                 int centerX = localPlayer.getBlockX() >> 4;
                 int centerZ = localPlayer.getBlockZ() >> 4;
                 levelChunkPacketTasks.sort(Comparator.comparingInt(task -> {
-                    int dx = task.pos.x() - centerX;
-                    int dz = task.pos.z() - centerZ;
+                    int dx = task.pos.x - centerX;
+                    int dz = task.pos.z - centerZ;
                     return dx*dx + dz*dz;
                 }));
 

@@ -2,21 +2,19 @@ package com.moulberry.flashback;
 
 import io.netty.buffer.Unpooled;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.core.RegistryAccess;
 import net.minecraft.network.FriendlyByteBuf;
+import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkPacketData;
 import net.minecraft.network.protocol.game.ClientboundLevelChunkWithLightPacket;
-import net.minecraft.network.protocol.game.ClientboundLightUpdatePacketData;
-import net.minecraft.world.level.block.entity.BlockEntityType;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.nio.ByteOrder;
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Comparator;
 
 public class CachedChunkPacket {
     private static final VarHandle LONG_ARRAY = MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.nativeOrder());
@@ -28,8 +26,8 @@ public class CachedChunkPacket {
 
     public CachedChunkPacket(ClientboundLevelChunkWithLightPacket packet, int index) {
         //keysmash random numbers used
-        this.x = packet.x();
-        this.z = packet.z();
+        this.x = packet.getX();
+        this.z = packet.getZ();
         this.bigHash = computePacketBigHash(packet);
         if (this.bigHash.length == 64) {//sha-512
             long hash = 982374698276290847L;
@@ -65,34 +63,39 @@ public class CachedChunkPacket {
             }
         }
 
-        digest.update(intToByteArray(packet.x()));
-        digest.update(intToByteArray(packet.z()));
-        digest.update(packet.chunkData().buffer);
+        ClientboundLevelChunkPacketData chunkData = packet.getChunkData();
+        digest.update(intToByteArray(packet.getX()));
+        digest.update(intToByteArray(packet.getZ()));
+        digest.update(chunkData.buffer);
 
-        FriendlyByteBuf frenBuffer = new FriendlyByteBuf(Unpooled.buffer());
+        FriendlyByteBuf lightBuffer = new FriendlyByteBuf(Unpooled.buffer());
+        try {
+            packet.getLightData().write(lightBuffer);
+            digest.update(lightBuffer.array(), 0, lightBuffer.writerIndex());
+        } finally {
+            lightBuffer.release();
+        }
 
-        ClientboundLightUpdatePacketData.STREAM_CODEC.encode(frenBuffer, packet.lightData);
-        digest.update(frenBuffer.array(), 0, frenBuffer.writerIndex());
-        frenBuffer.resetWriterIndex();
-
-        digest.update(frenBuffer.array(), 0, frenBuffer.writerIndex());
-        frenBuffer.resetWriterIndex();
-
-        // Sort to ensure stable ordering
-        var copy = new ArrayList<>(packet.chunkData().blockEntitiesData);
-        copy.sort(Comparator.comparingInt(a -> (a.y() << 8) | a.packedXZ()));
-
-        for (ClientboundLevelChunkPacketData.BlockEntityInfo blockEntitiesData : copy) {
-            digest.update(blockEntitiesData.packedXZ());
-            digest.update(intToByteArray(blockEntitiesData.y()));
-            digest.update(BuiltInRegistries.BLOCK_ENTITY_TYPE.getKey(blockEntitiesData.type()).toString().getBytes(StandardCharsets.UTF_8));
-            if (blockEntitiesData.tag().isPresent()) {
-                frenBuffer.writeNbt(blockEntitiesData.tag().get());
-                digest.update(frenBuffer.array(), 0, frenBuffer.writerIndex());
-                frenBuffer.resetWriterIndex();
-            } else {
-                digest.update("NO_TAG".getBytes(StandardCharsets.UTF_8));
+        // BlockEntityInfo fields are package-private in 1.21.1. Encode each complete entry with the
+        // packet's public codec, then sort the encoded entries to keep the hash independent of list
+        // iteration order (including block entities with no update tag).
+        RegistryAccess registryAccess = RegistryAccess.fromRegistryOfRegistries(BuiltInRegistries.REGISTRY);
+        ArrayList<byte[]> blockEntityEntries = new ArrayList<>(chunkData.blockEntitiesData.size());
+        for (ClientboundLevelChunkPacketData.BlockEntityInfo blockEntityInfo : chunkData.blockEntitiesData) {
+            FriendlyByteBuf entryBuffer = new FriendlyByteBuf(Unpooled.buffer());
+            try {
+                RegistryFriendlyByteBuf registryBuffer = new RegistryFriendlyByteBuf(entryBuffer, registryAccess);
+                ClientboundLevelChunkPacketData.BlockEntityInfo.STREAM_CODEC.encode(registryBuffer, blockEntityInfo);
+                byte[] encodedEntry = new byte[entryBuffer.writerIndex()];
+                entryBuffer.getBytes(0, encodedEntry);
+                blockEntityEntries.add(encodedEntry);
+            } finally {
+                entryBuffer.release();
             }
+        }
+        blockEntityEntries.sort(Arrays::compareUnsigned);
+        for (byte[] entry : blockEntityEntries) {
+            digest.update(entry);
         }
 
         return digest.digest();

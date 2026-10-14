@@ -1,15 +1,19 @@
 package com.moulberry.flashback.mixin.visuals;
 
-import com.mojang.blaze3d.resource.GraphicsResourceAllocator;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.PoseStack;
-import com.mojang.renderpearl.api.buffers.GpuBufferSlice;
 import com.moulberry.flashback.Flashback;
 import com.moulberry.flashback.visuals.WorldRenderHook;
-import net.minecraft.client.renderer.*;
-import net.minecraft.client.renderer.state.level.CameraRenderState;
-import org.joml.Vector4f;
+import net.minecraft.client.Camera;
+import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.renderer.GameRenderer;
+import net.minecraft.client.renderer.LevelRenderer;
+import net.minecraft.client.renderer.LightTexture;
+import net.minecraft.client.renderer.RenderBuffers;
+import org.joml.Matrix4f;
+import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
@@ -17,24 +21,31 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(LevelRenderer.class)
 public class MixinLevelRenderer {
 
-    @Inject(method = "render", at = @At("RETURN"))
-    public void renderLevelLast(GraphicsResourceAllocator resourceAllocator, boolean renderOutline, CameraRenderState cameraState, GpuBufferSlice terrainFog, Vector4f fogColor, boolean shouldRenderSky, boolean consistentDepthRequired, CallbackInfo ci) {
+    @Shadow @Final private RenderBuffers renderBuffers;
+
+    @Inject(method = "renderLevel", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/Options;getCloudsType()Lnet/minecraft/client/CloudStatus;", shift = At.Shift.BEFORE), require = 0)
+    public void renderLevelPost(DeltaTracker deltaTracker, boolean renderBlockOutline, Camera camera,
+                                GameRenderer gameRenderer, LightTexture lightTexture, Matrix4f modelView,
+                                Matrix4f projection, CallbackInfo ci) {
         if (!Flashback.isInReplay()) {
             return;
         }
 
-        PoseStack poseStack = new PoseStack();
-        poseStack.mulPose(cameraState.viewRotationMatrix);
+        this.renderBuffers.bufferSource().endBatch();
 
-        // Set model view stack to identity
+        PoseStack poseStack = new PoseStack();
+        poseStack.mulPose(modelView);
+
         var modelViewStack = RenderSystem.getModelViewStack();
         modelViewStack.pushMatrix();
         modelViewStack.identity();
+        RenderSystem.applyModelViewMatrix();
 
-        WorldRenderHook.renderHook(poseStack, cameraState);
+        float tickDelta = deltaTracker.getGameTimeDeltaPartialTick(true);
+        WorldRenderHook.renderHook(poseStack, tickDelta, renderBlockOutline, camera, gameRenderer, lightTexture, projection);
 
-        // Pop model view stack
+        this.renderBuffers.bufferSource().endBatch();
         modelViewStack.popMatrix();
+        RenderSystem.applyModelViewMatrix();
     }
-
 }

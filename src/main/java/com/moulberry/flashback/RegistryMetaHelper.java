@@ -11,7 +11,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.network.chat.MutableComponent;
 import net.minecraft.network.chat.Style;
 import net.minecraft.resources.ResourceKey;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -26,8 +26,8 @@ public class RegistryMetaHelper {
     public static LinkedHashMap<String, LinkedHashSet<String>> calculateNamespacesForRegistries() {
         LinkedHashMap<String, LinkedHashSet<String>> namespacesForRegistries = new LinkedHashMap<>();
 
-        for (Identifier registryName : BuiltInRegistries.REGISTRY.keySet()) {
-            Registry<?> registry = BuiltInRegistries.REGISTRY.getValue(registryName);
+        for (ResourceLocation registryName : BuiltInRegistries.REGISTRY.keySet()) {
+            Registry<?> registry = BuiltInRegistries.REGISTRY.get(registryName);
 
             if (registry == null) {
                 continue;
@@ -36,7 +36,7 @@ public class RegistryMetaHelper {
             LinkedHashSet<String> namespaces = new LinkedHashSet<>();
 
             for (Map.Entry<? extends ResourceKey<?>, ?> entry : registry.entrySet()) {
-                Identifier location = entry.getKey().identifier();
+                ResourceLocation location = entry.getKey().location();
                 String namespace = location.getNamespace();
                 if (!namespace.equals("minecraft") && !namespace.equals("brigadier")) {
                     namespaces.add(namespace);

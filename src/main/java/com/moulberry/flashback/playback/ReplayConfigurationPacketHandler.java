@@ -1,15 +1,24 @@
 package com.moulberry.flashback.playback;
 
-import com.mojang.serialization.Lifecycle;
-import com.moulberry.flashback.Flashback;
+import com.google.common.collect.ImmutableMap;
 import com.moulberry.flashback.exception.UnsupportedPacketException;
 import com.moulberry.flashback.registry.RegistryHelper;
-import net.minecraft.core.*;
+import net.fabricmc.fabric.api.event.registry.DynamicRegistries;
+import net.minecraft.core.Holder;
+import net.minecraft.core.Registry;
+import net.minecraft.core.RegistryAccess;
+import net.minecraft.core.RegistrySynchronization;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.DisconnectionDetails;
+import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.Packet;
 import net.minecraft.network.protocol.common.*;
-import net.minecraft.network.protocol.configuration.*;
+import net.minecraft.network.protocol.configuration.ClientConfigurationPacketListener;
+import net.minecraft.network.protocol.configuration.ClientboundFinishConfigurationPacket;
+import net.minecraft.network.protocol.configuration.ClientboundRegistryDataPacket;
+import net.minecraft.network.protocol.configuration.ClientboundResetChatPacket;
+import net.minecraft.network.protocol.configuration.ClientboundSelectKnownPacks;
+import net.minecraft.network.protocol.configuration.ClientboundUpdateEnabledFeaturesPacket;
 import net.minecraft.network.protocol.cookie.ClientboundCookieRequestPacket;
 import net.minecraft.resources.RegistryDataLoader;
 import net.minecraft.resources.ResourceKey;
@@ -17,36 +26,43 @@ import net.minecraft.server.RegistryLayer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.network.ConfigurationTask;
+import net.minecraft.server.network.config.JoinWorldTask;
 import net.minecraft.server.network.config.SynchronizeRegistriesTask;
 import net.minecraft.server.packs.PackLocationInfo;
-import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.repository.KnownPack;
 import net.minecraft.server.packs.repository.PackRepository;
-import net.minecraft.server.packs.repository.ServerPacksSource;
-import net.minecraft.server.packs.resources.CloseableResourceManager;
-import net.minecraft.server.packs.resources.MultiPackResourceManager;
-import net.minecraft.server.packs.resources.ResourceManager;
 import net.minecraft.server.packs.resources.ResourceProvider;
-import net.minecraft.tags.TagLoader;
 import net.minecraft.tags.TagNetworkSerialization;
-import net.minecraft.util.Util;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.flag.FeatureFlagSet;
 import net.minecraft.world.flag.FeatureFlags;
+import net.minecraft.world.level.GameRules;
+import net.minecraft.world.level.Level;
 import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.Biomes;
+import net.minecraft.world.level.dimension.BuiltinDimensionTypes;
 import net.minecraft.world.level.dimension.LevelStem;
+import net.minecraft.world.level.storage.DerivedLevelData;
+import net.minecraft.world.level.storage.PrimaryLevelData;
+import net.minecraft.world.level.storage.ServerLevelData;
 
-import java.util.*;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.function.Consumer;
 
 public class ReplayConfigurationPacketHandler implements ClientConfigurationPacketListener {
 
     private final ReplayServer replayServer;
-    private Map<ResourceKey<? extends Registry<?>>, RegistryDataLoader.NetworkedRegistryData> pendingRegistryMap = null;
+    private Map<ResourceKey<? extends Registry<?>>, List<RegistrySynchronization.PackedRegistryEntry>> pendingRegistryMap = null;
     private Map<ResourceKey<? extends Registry<?>>, TagNetworkSerialization.NetworkPayload> pendingTags = null;
-    private PackRepository packRepository = null;
-    private List<KnownPack> knownPacks = null;
-    private List<String> knownPackIds = null;
     private FeatureFlagSet pendingFeatureFlags = null;
+    private List<KnownPack> pendingKnownPacks = null;
     private boolean pendingResetChat = false;
     private boolean dirty = false;
 
@@ -64,6 +80,8 @@ public class ReplayConfigurationPacketHandler implements ClientConfigurationPack
 
         List<ConfigurationTask> configurationTasks = new ArrayList<>();
         FeatureFlagSet currentFeatureFlags = this.replayServer.worldData.enabledFeatures();
+        List<KnownPack> currentKnownPacks = this.replayServer.getResourceManager().listPacks().flatMap(packResources -> packResources.location().knownPackInfo().stream()).toList();
+        boolean synchronizeRegistries = false;
 
         List<Packet<? super ClientConfigurationPacketListener>> initialPackets = new ArrayList<>();
 
@@ -81,36 +99,72 @@ public class ReplayConfigurationPacketHandler implements ClientConfigurationPack
             this.pendingResetChat = false;
         }
 
+        if (this.pendingKnownPacks != null) {
+            Set<KnownPack> currentSet = new HashSet<>(currentKnownPacks);
+            Set<KnownPack> pendingSet = new HashSet<>(this.pendingKnownPacks);
+
+            if (!currentSet.equals(pendingSet)) {
+                currentKnownPacks = this.pendingKnownPacks;
+                synchronizeRegistries = true;
+            }
+
+            this.pendingKnownPacks = null;
+        }
+
+        if (this.pendingRegistryMap != null && !this.pendingRegistryMap.isEmpty()) {
+            Map<ResourceKey<? extends Registry<?>>, List<RegistrySynchronization.PackedRegistryEntry>> entries = this.pendingRegistryMap;
+            this.pendingRegistryMap = null;
+
+            ResourceProvider resourceProvider = this.replayServer.getResourceManager();
+            RegistryAccess accessForLoading = this.replayServer.registries().getAccessForLoading(RegistryLayer.WORLDGEN);
+
+            RegistryAccess.Frozen synchronizedRegistries = RegistryDataLoader.load(entries, resourceProvider, accessForLoading,
+                RegistryDataLoader.SYNCHRONIZED_REGISTRIES);
+
+            if (!RegistryHelper.equals(this.replayServer.registryAccess(), synchronizedRegistries, RegistryDataLoader.SYNCHRONIZED_REGISTRIES)) {
+                Set<ResourceKey<?>> neededRegistries = new HashSet<>();
+                for (RegistryDataLoader.RegistryData<?> worldgenRegistry : DynamicRegistries.getDynamicRegistries()) {
+                    neededRegistries.add(worldgenRegistry.key());
+                }
+
+                List<Registry<?>> registries = new ArrayList<>();
+
+                // Add all synchronized registries
+                synchronizedRegistries.registries().forEach(e -> {
+                    if (neededRegistries.remove(e.key())) {
+                        registries.add(e.value());
+                    }
+                });
+                // Add all other registries
+                this.replayServer.registryAccess().registries().forEach(e -> {
+                    if (neededRegistries.remove(e.key())) {
+                        registries.add(e.value());
+                    }
+                });
+
+                var finalRegistries = new RegistryAccess.ImmutableRegistryAccess(registries);
+
+                var newRegistries = this.replayServer.registries.replaceFrom(RegistryLayer.WORLDGEN, finalRegistries.freeze());
+
+                this.replayServer.registries.keys = newRegistries.keys;
+                this.replayServer.registries.values = newRegistries.values;
+                ((RegistryAccess.ImmutableRegistryAccess)this.replayServer.registries.composite).registries =
+                    ((RegistryAccess.ImmutableRegistryAccess)newRegistries.composite).registries;
+
+                synchronizeRegistries = true;
+            }
+        }
+
         if (this.pendingTags != null && !this.pendingTags.isEmpty()) {
             this.pendingTags.forEach((resourceKey, networkPayload) -> {
-                var registry = this.replayServer.registryAccess().lookupOrThrow(resourceKey);
-                var loadResult = networkPayload.resolve(registry);
-                if (this.pendingRegistryMap != null) {
-                    var entry = this.pendingRegistryMap.get(resourceKey);
-                    if (entry != null) {
-                        this.pendingRegistryMap.put(resourceKey, new RegistryDataLoader.NetworkedRegistryData(entry.elements(), networkPayload));
-                    }
-                }
-                registry.prepareTagReload(loadResult).apply();
+                networkPayload.applyToRegistry(this.replayServer.registryAccess().registryOrThrow(resourceKey));
             });
             sendTags = true;
             this.pendingTags = null;
         }
 
-        boolean synchronizeRegistries = false;
-
-        if (this.pendingRegistryMap != null && !this.pendingRegistryMap.isEmpty()) {
-            if (this.packRepository != null) {
-                try (CloseableResourceManager resourceManager = new MultiPackResourceManager(PackType.SERVER_DATA, this.packRepository.openAllSelected())) {
-                    synchronizeRegistries = tryUpdateRegistries(resourceManager);
-                }
-            } else {
-                synchronizeRegistries = tryUpdateRegistries(ResourceProvider.EMPTY);
-            }
-        }
-
         if (synchronizeRegistries) {
-            configurationTasks.add(new SynchronizeRegistriesTask(this.knownPacks != null ? this.knownPacks : List.of(), this.replayServer.registries));
+            configurationTasks.add(new SynchronizeRegistriesTask(currentKnownPacks, this.replayServer.registries));
         } else if (sendTags) {
             this.replayServer.getPlayerList().broadcastAll(new ClientboundUpdateTagsPacket(TagNetworkSerialization.serializeTagsToNetwork(this.replayServer.registries)));
         }
@@ -119,11 +173,14 @@ public class ReplayConfigurationPacketHandler implements ClientConfigurationPack
             return;
         }
 
-        this.replayServer.updateRegistry(currentFeatureFlags, initialPackets, configurationTasks, this.knownPackIds);
+        configurationTasks.add(new JoinWorldTask());
+
+        Collection<String> selectedPacks = knownPacksToIds(this.replayServer.getPackRepository(), currentKnownPacks);
+        this.replayServer.updateRegistry(currentFeatureFlags, initialPackets, configurationTasks, selectedPacks);
 
         // Remove all players
         for (ServerPlayer player : new ArrayList<>(this.replayServer.getPlayerList().getPlayers())) {
-            player.discard();
+            player.connection.disconnect(Component.empty());
         }
 
         // Remove all levels
@@ -132,108 +189,34 @@ public class ReplayConfigurationPacketHandler implements ClientConfigurationPack
         }
         this.replayServer.levels.clear();
 
-        // Recreate levels
-        this.replayServer.loadLevel();
+        // Recreate overworld
+        ServerLevelData serverLevelData = this.replayServer.worldData.overworldData();
+        Holder.Reference<Biome> plains = this.replayServer.registryAccess().registryOrThrow(Registries.BIOME).getHolderOrThrow(Biomes.PLAINS);
+        LevelStem levelStem = new LevelStem(this.replayServer.registryAccess().registryOrThrow(Registries.DIMENSION_TYPE).getHolderOrThrow(BuiltinDimensionTypes.OVERWORLD), new EmptyLevelSource(plains));
+        var progressListener = this.replayServer.progressListenerFactory.create(this.replayServer.worldData.getGameRules().getInt(GameRules.RULE_SPAWN_CHUNK_RADIUS));
+        ServerLevel serverLevel = new ServerLevel(this.replayServer, this.replayServer.executor, this.replayServer.storageSource,
+            serverLevelData, Level.OVERWORLD, levelStem, progressListener,
+            false, 0, List.of(), false, null);
+        serverLevel.noSave = true;
+        this.replayServer.levels.put(Level.OVERWORLD, serverLevel);
+        this.replayServer.getPlayerList().addWorldborderListener(serverLevel);
     }
 
-    private boolean tryUpdateRegistries(ResourceProvider resourceProvider) {
-        Map<ResourceKey<? extends Registry<?>>, RegistryDataLoader.NetworkedRegistryData> entries = this.pendingRegistryMap;
-        this.pendingRegistryMap = null;
-
-        List<HolderLookup.RegistryLookup<?>> updatedLookups = TagLoader.buildUpdatedLookups(this.replayServer.registryAccess(), List.of());
-
-        RegistryAccess.Frozen synchronizedRegistries;
-        try {
-            synchronizedRegistries = RegistryDataLoader.load(entries, resourceProvider, updatedLookups,
-                RegistryDataLoader.SYNCHRONIZED_REGISTRIES, Util.backgroundExecutor()).join();
-        } catch (Exception e) {
-            this.replayServer.failedToLoadRegistryDataWarning = true;
-            Flashback.LOGGER.error("Error while trying to load registry data. Skipping... this might cause other issues", e);
-            return false;
-        }
-
-        boolean hasRegistriesChanged = !RegistryHelper.equals(this.replayServer.registryAccess(), synchronizedRegistries, RegistryDataLoader.SYNCHRONIZED_REGISTRIES);
-
-        if (hasRegistriesChanged) {
-            var newRegistries = this.replayServer.registries;
-            boolean replacedPreviousLayer = false;
-
-            HashSet<ResourceKey<? extends Registry<?>>> changedRegistries = new HashSet<>();
-            for (RegistryDataLoader.RegistryData<?> synchronizedRegistry : RegistryDataLoader.SYNCHRONIZED_REGISTRIES) {
-                changedRegistries.add(synchronizedRegistry.key());
-            }
-
-            for (RegistryLayer layer : RegistryLayer.values()) {
-                RegistryAccess.Frozen registriesForLayer = this.replayServer.registries.getLayer(layer);
-
-                List<Registry<?>> registries = new ArrayList<>();
-
-                boolean replacedPartOfLayer = false;
-
-                for (RegistryAccess.RegistryEntry<?> registryEntry : registriesForLayer.registries().toList()) {
-                    var overriden = synchronizedRegistries.lookup(registryEntry.key());
-                    if (changedRegistries.contains(registryEntry.key()) && overriden.isPresent()) {
-                        registries.add(overriden.get());
-                        replacedPartOfLayer = true;
-                    } else {
-                        if (registryEntry.key() == Registries.LEVEL_STEM) {
-                            try {
-                                var dimensionsOpt = synchronizedRegistries.lookup(Registries.DIMENSION_TYPE);
-                                var biomesOpt = synchronizedRegistries.lookup(Registries.BIOME);
-                                if (dimensionsOpt.isPresent()) {
-                                    var dimensions = dimensionsOpt.get();
-
-                                    Holder.Reference<Biome> plains;
-                                    if (biomesOpt.isPresent()) {
-                                        plains = biomesOpt.get().getOrThrow(Biomes.PLAINS);
-                                    } else {
-                                        plains = this.replayServer.registryAccess().lookupOrThrow(Registries.BIOME).getOrThrow(Biomes.PLAINS);
-                                    }
-
-                                    var mapped = new MappedRegistry<>(Registries.LEVEL_STEM, Lifecycle.stable());
-                                    for (var key : dimensions.registryKeySet()) {
-                                        var stemKey = ResourceKey.create(Registries.LEVEL_STEM, key.identifier());
-                                        var stem = new LevelStem(dimensions.getOrThrow(key), new EmptyLevelSource(plains));
-                                        mapped.register(stemKey, stem, RegistrationInfo.BUILT_IN);
-                                    }
-
-                                    replacedPartOfLayer = true;
-                                    registries.add(mapped.freeze());
-                                    continue;
-                                }
-                            } catch (Exception ignored) {
-                                registries.add(registryEntry.value());
-                            }
-                        }
-
-                        registries.add(registryEntry.value());
-                    }
-                }
-
-                if (replacedPartOfLayer) {
-                    replacedPreviousLayer = true;
-                    var finalRegistries = new RegistryAccess.ImmutableRegistryAccess(registries);
-                    newRegistries = newRegistries.replaceFrom(layer, finalRegistries.freeze());
-                } else if (replacedPreviousLayer) {
-                    newRegistries = newRegistries.replaceFrom(layer, registriesForLayer);
-                }
-            }
-
-            if (newRegistries != this.replayServer.registries) {
-                this.replayServer.registries.keys = newRegistries.keys;
-                this.replayServer.registries.values = newRegistries.values;
-                ((RegistryAccess.ImmutableRegistryAccess)this.replayServer.registries.composite).registries =
-                    ((RegistryAccess.ImmutableRegistryAccess)newRegistries.composite).registries;
-
-                return true;
+    private static Collection<String> knownPacksToIds(PackRepository packRepository, Collection<KnownPack> knownPacks) {
+        Collection<String> selectedPacks = new ArrayList<>();
+        ImmutableMap.Builder<KnownPack, String> builder = ImmutableMap.builder();
+        packRepository.getAvailablePacks().forEach(pack -> {
+            PackLocationInfo packLocationInfo = pack.location();
+            packLocationInfo.knownPackInfo().ifPresent(knownPack -> builder.put(knownPack, packLocationInfo.id()));
+        });
+        Map<KnownPack, String> knownPackToId = builder.build();
+        for (KnownPack knownPack : knownPacks) {
+            String selectedId = knownPackToId.get(knownPack);
+            if (selectedId != null) {
+                selectedPacks.add(selectedId);
             }
         }
-
-        return false;
-    }
-
-    @Override
-    public void handleCodeOfConduct(ClientboundCodeOfConductPacket clientboundCodeOfConductPacket) {
+        return selectedPacks;
     }
 
     @Override
@@ -247,8 +230,7 @@ public class ReplayConfigurationPacketHandler implements ClientConfigurationPack
         if (this.pendingRegistryMap == null) {
             this.pendingRegistryMap = new HashMap<>();
         }
-        this.pendingRegistryMap.put(clientboundRegistryDataPacket.registry(),
-                new RegistryDataLoader.NetworkedRegistryData(clientboundRegistryDataPacket.entries(), TagNetworkSerialization.NetworkPayload.EMPTY));
+        this.pendingRegistryMap.put(clientboundRegistryDataPacket.registry(), clientboundRegistryDataPacket.entries());
     }
 
     @Override
@@ -259,27 +241,8 @@ public class ReplayConfigurationPacketHandler implements ClientConfigurationPack
 
     @Override
     public void handleSelectKnownPacks(ClientboundSelectKnownPacks clientboundSelectKnownPacks) {
-        this.packRepository = ServerPacksSource.createVanillaTrustedRepository();
-        this.packRepository.reload();
-
-        Map<KnownPack, String> packToId = new HashMap<>();
-        this.packRepository.getAvailablePacks().forEach(pack -> {
-            PackLocationInfo location = pack.location();
-            location.knownPackInfo().ifPresent(knownPack -> packToId.put(knownPack, location.id()));
-        });
-
-        this.knownPacks = new ArrayList<>();
-        this.knownPackIds = new ArrayList<>();
-
-        for (KnownPack knownPack : clientboundSelectKnownPacks.knownPacks()) {
-            String id = packToId.get(knownPack);
-            if (id != null) {
-                this.knownPacks.add(knownPack);
-                this.knownPackIds.add(id);
-            }
-        }
-
-        this.packRepository.setSelected(this.knownPackIds);
+        this.dirty = true;
+        this.pendingKnownPacks = clientboundSelectKnownPacks.knownPacks();
     }
 
     @Override
@@ -328,7 +291,7 @@ public class ReplayConfigurationPacketHandler implements ClientConfigurationPack
         if (this.pendingTags == null) {
             this.pendingTags = new HashMap<>();
         }
-        this.pendingTags.putAll(clientboundUpdateTagsPacket.tags());
+        this.pendingTags.putAll(clientboundUpdateTagsPacket.getTags());
     }
 
     @Override
@@ -349,18 +312,6 @@ public class ReplayConfigurationPacketHandler implements ClientConfigurationPack
     @Override
     public void handleServerLinks(ClientboundServerLinksPacket clientboundServerLinksPacket) {
         throw new UnsupportedPacketException(clientboundServerLinksPacket);
-    }
-
-    @Override
-    public void handleClearDialog(ClientboundClearDialogPacket clientboundClearDialogPacket) {
-    }
-
-    @Override
-    public void handleShowDialog(ClientboundShowDialogPacket clientboundShowDialogPacket) {
-    }
-
-    @Override
-    public void handlePostEffects(ClientboundPostEffectsPacket packet) {
     }
 
     @Override

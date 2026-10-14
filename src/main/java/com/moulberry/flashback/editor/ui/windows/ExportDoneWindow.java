@@ -1,6 +1,6 @@
 package com.moulberry.flashback.editor.ui.windows;
 
-import com.mojang.blaze3d.Blaze3D;
+import net.minecraft.Util;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.moulberry.flashback.Utils;
 import com.moulberry.flashback.editor.ui.ImGuiHelper;
@@ -50,10 +50,10 @@ public class ExportDoneWindow {
             Objects.requireNonNull(this.thumbnail);
 
             if (this.uploaded == null) {
-                this.uploaded = new DynamicTexture(() -> "flashback export thumbnail", this.thumbnail);;
+                this.uploaded = new DynamicTexture(this.thumbnail);
             }
 
-            return ReplayUI.imguiRenderer.getTextureId(this.uploaded.getTextureView());
+            return ReplayUI.imguiRenderer.getTextureId(this.uploaded.getId());
         }
     }
 
@@ -125,10 +125,10 @@ public class ExportDoneWindow {
                     }
 
                     if (ImGui.imageButton("ExportThumbnail", id, new ImVec2(width, height))) {
-                        Blaze3D.openPath(entry.outputLocation);
+                        Util.getPlatform().openPath(entry.outputLocation);
                     }
                 } else if (ImGui.button(I18n.get("flashback.export_done.missing_thumbnail"), DESIRED_W+padding.x*2, DESIRED_H+padding.y*2)) {
-                    Blaze3D.openPath(entry.outputLocation);
+                    Util.getPlatform().openPath(entry.outputLocation);
                 }
 
                 ImGui.sameLine();
@@ -153,14 +153,14 @@ public class ExportDoneWindow {
 
                 if (entry.outputIsFolder) {
                     if (ImGui.button(I18n.get("flashback.open_folder"))) {
-                        Blaze3D.openPath(entry.outputLocation);
+                        Util.getPlatform().openPath(entry.outputLocation);
                     }
                 } else {
                     if (ImGui.button(I18n.get("flashback.open_file"))) {
-                        Blaze3D.openPath(entry.outputLocation);
+                        Util.getPlatform().openPath(entry.outputLocation);
                     }
                     if (ImGui.button(I18n.get("flashback.open_folder"))) {
-                        Blaze3D.openPath(entry.outputLocation.getParent());
+                        Util.getPlatform().openPath(entry.outputLocation.getParent());
                     }
                 }
 

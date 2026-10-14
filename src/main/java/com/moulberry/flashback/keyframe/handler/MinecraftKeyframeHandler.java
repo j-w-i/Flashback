@@ -100,8 +100,7 @@ public class MinecraftKeyframeHandler implements KeyframeHandler {
             // A positioned camera is not following anyone.
             this.stopSpectating();
 
-            player.snapTo(position.x, position.y, position.z, (float) yaw, (float) pitch);
-            player.getInterpolation().cancel();
+            player.moveTo(position.x, position.y, position.z, (float) yaw, (float) pitch);
 
             this.applyRollOverride(roll);
 
@@ -125,8 +124,7 @@ public class MinecraftKeyframeHandler implements KeyframeHandler {
         if (player != null) {
             this.stopSpectating();
 
-            player.snapTo(position.x, position.y, position.z, player.getYRot(), player.getXRot());
-            player.getInterpolation().cancel();
+            player.moveTo(position.x, position.y, position.z, player.getYRot(), player.getXRot());
 
             player.setDeltaMovement(Vec3.ZERO);
         }
@@ -146,8 +144,7 @@ public class MinecraftKeyframeHandler implements KeyframeHandler {
         if (player != null) {
             this.stopSpectating();
 
-            player.snapTo(player.getX(), player.getY(), player.getZ(), (float) yaw, (float) pitch);
-            player.getInterpolation().cancel();
+            player.moveTo(player.getX(), player.getY(), player.getZ(), (float) yaw, (float) pitch);
 
             this.applyRollOverride(roll);
 

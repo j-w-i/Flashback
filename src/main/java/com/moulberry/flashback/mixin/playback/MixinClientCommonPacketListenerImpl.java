@@ -37,7 +37,7 @@ public abstract class MixinClientCommonPacketListenerImpl {
     @Inject(method = "handleResourcePackPush", at = @At("HEAD"), cancellable = true)
     public void handleResourcePackPush(ClientboundResourcePackPushPacket clientboundResourcePackPushPacket, CallbackInfo ci) {
         if (Flashback.isInReplay()) {
-            PacketUtils.ensureRunningOnSameThread(clientboundResourcePackPushPacket, (ClientCommonPacketListenerImpl)(Object)this, this.minecraft.packetProcessor());
+            PacketUtils.ensureRunningOnSameThread(clientboundResourcePackPushPacket, (ClientCommonPacketListenerImpl)(Object)this, this.minecraft);
 
             UUID uuid = clientboundResourcePackPushPacket.id();
             URL uRL = parseResourcePackUrl(clientboundResourcePackPushPacket.url());

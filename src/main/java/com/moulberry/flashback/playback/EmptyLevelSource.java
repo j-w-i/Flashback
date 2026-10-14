@@ -11,7 +11,6 @@ import net.minecraft.world.level.biome.Biome;
 import net.minecraft.world.level.biome.BiomeManager;
 import net.minecraft.world.level.biome.Biomes;
 import net.minecraft.world.level.biome.FixedBiomeSource;
-import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.state.BlockState;
 import net.minecraft.world.level.chunk.ChunkAccess;
 import net.minecraft.world.level.chunk.ChunkGenerator;
@@ -19,13 +18,8 @@ import net.minecraft.world.level.levelgen.GenerationStep;
 import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.world.level.levelgen.RandomState;
 import net.minecraft.world.level.levelgen.blending.Blender;
-import net.minecraft.world.level.levelgen.densityfunction.SamplerContext;
-import org.jspecify.annotations.Nullable;
-
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.Executor;
 
 public class EmptyLevelSource extends ChunkGenerator {
     public static final MapCodec<EmptyLevelSource> CODEC = RecordCodecBuilder.mapCodec(instance -> instance.group(RegistryOps.retrieveElement(Biomes.PLAINS)).apply(instance, instance.stable(EmptyLevelSource::new)));
@@ -40,7 +34,16 @@ public class EmptyLevelSource extends ChunkGenerator {
     }
 
     @Override
+    public void buildSurface(WorldGenRegion worldGenRegion, StructureManager structureManager, RandomState randomState, ChunkAccess chunkAccess) {
+    }
+
+    @Override
     public void applyBiomeDecoration(WorldGenLevel worldGenLevel, ChunkAccess chunkAccess, StructureManager structureManager) {
+    }
+
+    @Override
+    public CompletableFuture<ChunkAccess> fillFromNoise(Blender blender, RandomState randomState, StructureManager structureManager, ChunkAccess chunkAccess) {
+        return CompletableFuture.completedFuture(chunkAccess);
     }
 
     @Override
@@ -54,7 +57,11 @@ public class EmptyLevelSource extends ChunkGenerator {
     }
 
     @Override
-    public void addDebugScreenInfo(List<String> result, RandomState randomState, BlockPos feetPos, SamplerContext samplerContext) {
+    public void addDebugScreenInfo(List<String> result, RandomState randomState, BlockPos feetPos) {
+    }
+
+    @Override
+    public void applyCarvers(WorldGenRegion worldGenRegion, long seed, RandomState randomState, BiomeManager biomeManager, StructureManager structureManager, ChunkAccess chunkAccess, GenerationStep.Carving carving) {
     }
 
     @Override
@@ -69,11 +76,6 @@ public class EmptyLevelSource extends ChunkGenerator {
     @Override
     public int getGenDepth() {
         return 384;
-    }
-
-    @Override
-    public CompletableFuture<ChunkAccess> buildTerrain(ChunkAccess chunk, Blender blender, RandomState randomState, StructureManager structureManager, BiomeManager biomeManager, @Nullable WorldGenRegion carverBiomeRegion, Set<Holder<Biome>> possibleBiomes) {
-        return CompletableFuture.completedFuture(chunk);
     }
 
     @Override

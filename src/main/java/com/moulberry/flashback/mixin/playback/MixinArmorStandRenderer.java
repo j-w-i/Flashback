@@ -1,33 +1,24 @@
 package com.moulberry.flashback.mixin.playback;
 
-import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
-import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.math.Axis;
 import com.moulberry.flashback.Flashback;
 import net.minecraft.client.renderer.entity.ArmorStandRenderer;
-import net.minecraft.client.renderer.entity.state.ArmorStandRenderState;
+import net.minecraft.world.entity.decoration.ArmorStand;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.Redirect;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 @Mixin(ArmorStandRenderer.class)
 public class MixinArmorStandRenderer {
 
-    /*
-     * Disable armor stand hit animation
-     * If the game time isn't updated, it'll just keep on playing it (even if it wasn't hit)
-     */
-
-    @WrapOperation(method = "setupRotations(Lnet/minecraft/client/renderer/entity/state/ArmorStandRenderState;Lcom/mojang/blaze3d/vertex/PoseStack;FF)V", at = @At(value = "FIELD", target = "Lnet/minecraft/client/renderer/entity/state/ArmorStandRenderState;wiggle:F"))
-    public float setupRotations_wiggle(ArmorStandRenderState instance, Operation<Float> original) {
+    /** Prevent a frozen replay clock from leaving the armor-stand hit wiggle animated forever. */
+    @Inject(method = "setupRotations(Lnet/minecraft/world/entity/decoration/ArmorStand;Lcom/mojang/blaze3d/vertex/PoseStack;FFFF)V", at = @At("HEAD"), cancellable = true)
+    public void setupRotations(ArmorStand armorStand, PoseStack poseStack, float f, float g, float h, float i, CallbackInfo ci) {
         if (Flashback.isInReplay()) {
-            return 0;
-        } else {
-            return original.call(instance);
+            poseStack.mulPose(Axis.YP.rotationDegrees(180.0F - g));
+            ci.cancel();
         }
     }
-
 }

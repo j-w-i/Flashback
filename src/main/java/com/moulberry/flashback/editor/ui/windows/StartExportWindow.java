@@ -23,7 +23,7 @@ import imgui.moulberry90.ImGui;
 import imgui.moulberry90.flag.ImGuiWindowFlags;
 import imgui.moulberry90.type.ImString;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.util.FileUtil;
+import net.minecraft.FileUtil;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.resources.language.I18n;
@@ -247,7 +247,7 @@ public class StartExportWindow {
 
             ImGui.dummy(0, 10 * ReplayUI.getUiScale());
 
-            boolean isFullscreen = Minecraft.getInstance().getWindow().isExclusiveFullscreen();
+            boolean isFullscreen = Minecraft.getInstance().getWindow().isFullscreen();
             if (isFullscreen) {
                 ImGui.separator();
                 ImGui.textWrapped(I18n.get("flashback.export_disable_fullscreen"));
@@ -302,9 +302,6 @@ public class StartExportWindow {
         if (editorState != null && !editorState.replayVisuals.renderSky) {
             if (ImGui.checkbox(I18n.get("flashback.transparent_sky"), config.internalExport.transparentBackground)) {
                 config.internalExport.transparentBackground = !config.internalExport.transparentBackground;
-            }
-            if (config.internalExport.transparentBackground && !Minecraft.getInstance().options.improvedTransparency().get()) {
-                ImGui.textWrapped("It is recommended to enable 'Improved Transparency' in the Minecraft video options");
             }
         } else {
             config.internalExport.transparentBackground = false;

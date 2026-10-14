@@ -10,11 +10,9 @@ import com.moulberry.lattice.keybind.LatticeInputType;
 import imgui.moulberry90.ImGuiIO;
 import imgui.moulberry90.flag.ImGuiKey;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.input.InputQuirks;
-import net.minecraft.client.input.KeyEvent;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.network.chat.Component;
-import net.minecraft.util.Util;
+import net.minecraft.Util;
 
 import java.util.Collection;
 import java.util.List;
@@ -23,6 +21,10 @@ import java.util.Locale;
 public class Keybind implements KeybindInterface {
 
     public static final int FAKE_SCROLL_KEY = 17;
+
+    private static boolean replaceCtrlWithCommand() {
+        return Util.getPlatform() == Util.OS.OSX;
+    }
 
     private final String description;
     private int key;
@@ -222,7 +224,7 @@ public class Keybind implements KeybindInterface {
         }
 
         //#if MC>=12109
-        return InputConstants.getKey(new KeyEvent(key, -1, 0)).getDisplayName().getString();
+        return InputConstants.getKey(InputHelper.imguiKeyToGlfwKey(key), -1).getDisplayName().getString();
         //#else
         //$$ return InputConstants.getKey(key, -1).getDisplayName().getString();
         //#endif
@@ -244,7 +246,7 @@ public class Keybind implements KeybindInterface {
         StringBuilder builder = new StringBuilder();
         if (this.shiftMod) builder.append(I18n.get("flashback.keymod.shift")).append("+");
         if (this.ctrlMod) {
-            if (InputQuirks.REPLACE_CTRL_KEY_WITH_CMD_KEY) {
+            if (replaceCtrlWithCommand()) {
                 builder.append(I18n.get("flashback.keymod.mac_cmd")).append("+");
             } else {
                 builder.append(I18n.get("flashback.keymod.ctrl")).append("+");
@@ -252,7 +254,7 @@ public class Keybind implements KeybindInterface {
         }
         if (this.altMod) builder.append(I18n.get("flashback.keymod.alt")).append("+");
         if (this.superMod) {
-            if (InputQuirks.REPLACE_CTRL_KEY_WITH_CMD_KEY) {
+            if (replaceCtrlWithCommand()) {
                 builder.append(I18n.get("flashback.keymod.ctrl")).append("+");
             } else if (Util.getPlatform() == Util.OS.WINDOWS) {
                 builder.append(I18n.get("flashback.keymod.win_super")).append("+");
@@ -270,9 +272,9 @@ public class Keybind implements KeybindInterface {
         if (this.key != key) return false;
 
         if (this.shiftMod != shiftMod) return false;
-        if (this.ctrlMod != (InputQuirks.REPLACE_CTRL_KEY_WITH_CMD_KEY ? superMod : ctrlMod)) return false;
+        if (this.ctrlMod != (replaceCtrlWithCommand() ? superMod : ctrlMod)) return false;
         if (this.altMod != altMod) return false;
-        if (this.superMod != (InputQuirks.REPLACE_CTRL_KEY_WITH_CMD_KEY ? ctrlMod : superMod)) return false;
+        if (this.superMod != (replaceCtrlWithCommand() ? ctrlMod : superMod)) return false;
 
         return true;
     }
@@ -345,7 +347,7 @@ public class Keybind implements KeybindInterface {
         boolean ctrlMod = this.ctrlMod;
         boolean superMod = this.superMod;
 
-        if (InputQuirks.REPLACE_CTRL_KEY_WITH_CMD_KEY) {
+        if (replaceCtrlWithCommand()) {
             ctrlMod = this.superMod;
             superMod = this.ctrlMod;
         }
@@ -396,9 +398,9 @@ public class Keybind implements KeybindInterface {
             }
         }
         this.shiftMod = shiftMod;
-        this.ctrlMod = InputQuirks.REPLACE_CTRL_KEY_WITH_CMD_KEY ? superMod : ctrlMod;
+        this.ctrlMod = replaceCtrlWithCommand() ? superMod : ctrlMod;
         this.altMod = altMod;
-        this.superMod = InputQuirks.REPLACE_CTRL_KEY_WITH_CMD_KEY ? ctrlMod : superMod;
+        this.superMod = replaceCtrlWithCommand() ? ctrlMod : superMod;
         Keybinds.updateMapping(this, oldKey);
     }
 
@@ -411,7 +413,8 @@ public class Keybind implements KeybindInterface {
     }
 
     @Override
-    public Collection<Component> getConflicts() {
+    @SuppressWarnings("rawtypes")
+    public Collection getConflicts() {
         return List.of();
     }
 }

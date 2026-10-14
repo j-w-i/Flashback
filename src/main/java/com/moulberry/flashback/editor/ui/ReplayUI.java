@@ -1,7 +1,6 @@
 package com.moulberry.flashback.editor.ui;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
-import com.mojang.blaze3d.platform.InputConstants;
 import com.mojang.blaze3d.platform.Window;
 import com.moulberry.flashback.Flashback;
 import com.moulberry.flashback.configuration.FlashbackConfigV1;
@@ -27,13 +26,12 @@ import imgui.moulberry90.internal.ImGuiContext;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.LevelLoadingScreen;
-import net.minecraft.client.gui.screens.LoadingOverlay;
 import net.minecraft.client.gui.screens.ProgressScreen;
-import net.minecraft.client.input.InputQuirks;
 import net.minecraft.client.multiplayer.MultiPlayerGameMode;
 import net.minecraft.client.player.LocalPlayer;
 import net.minecraft.client.resources.language.ClientLanguage;
 import net.minecraft.client.resources.language.I18n;
+import net.minecraft.Util;
 import net.minecraft.locale.Language;
 import net.minecraft.util.Mth;
 import net.minecraft.world.entity.Entity;
@@ -47,11 +45,11 @@ import org.jetbrains.annotations.Nullable;
 import org.joml.Matrix4f;
 import org.joml.Quaternionf;
 import org.joml.Vector4f;
-import org.lwjgl.sdl.SDLKeyboard;
-import org.lwjgl.sdl.SDLScancode;
+import org.lwjgl.glfw.GLFW;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -159,9 +157,9 @@ public class ReplayUI {
         imGuiIO.setIniFilename(relativePath.toString());
 
         imGuiIO.addConfigFlags(ImGuiConfigFlags.DockingEnable);
-        imGuiIO.setConfigMacOSXBehaviors(InputQuirks.REPLACE_CTRL_KEY_WITH_CMD_KEY);
+        imGuiIO.setConfigMacOSXBehaviors(Util.getPlatform() == Util.OS.OSX);
 
-        imguiWindower.init(Minecraft.getInstance().getWindow().handle());
+        imguiWindower.init(Minecraft.getInstance().getWindow().getWindow());
         imguiRenderer.init();
 
         contentScale = imguiWindower.getContentScale();
@@ -213,9 +211,7 @@ public class ReplayUI {
         }
 
         if (Language.getInstance() instanceof ClientLanguage clientLanguage) {
-            for (String value : clientLanguage.storage.values()) {
-                rangesBuilder.addText(value);
-            }
+            addLanguageTranslations(rangesBuilder, clientLanguage);
         }
 
         rangesBuilder.addChar('\u2318'); // Mac CMD
@@ -229,17 +225,21 @@ public class ReplayUI {
         rangesBuilder.addChar('\u2192'); // Right Arrow
         rangesBuilder.addChar('\u2193'); // Down Arrow
 
-        // Make sure every printable key on the keyboard is present
-        for (int i = SDLScancode.SDL_SCANCODE_A; i < SDLScancode.SDL_SCANCODE_COUNT; i++) {
-            int keycode = SDLKeyboard.SDL_GetKeyFromScancode(i, (short)0, false);
-            if (keycode == 0) {
-                continue;
-            }
-            String key = SDLKeyboard.SDL_GetKeyName(keycode);
+        // Make sure every printable key on the keyboard is present.
+        for (int keyCode = GLFW.GLFW_KEY_SPACE; keyCode <= GLFW.GLFW_KEY_LAST; keyCode++) {
+            // GLFW key IDs are sparse. Query only printable keys, not the gaps
+            // whose Windows scancode is -1 (GLFW_INVALID_VALUE).
+            boolean printable = keyCode == GLFW.GLFW_KEY_SPACE || keyCode == GLFW.GLFW_KEY_APOSTROPHE
+                || (keyCode >= GLFW.GLFW_KEY_COMMA && keyCode <= GLFW.GLFW_KEY_9)
+                || keyCode == GLFW.GLFW_KEY_SEMICOLON || keyCode == GLFW.GLFW_KEY_EQUAL
+                || (keyCode >= GLFW.GLFW_KEY_A && keyCode <= GLFW.GLFW_KEY_RIGHT_BRACKET)
+                || keyCode == GLFW.GLFW_KEY_GRAVE_ACCENT
+                || (keyCode >= GLFW.GLFW_KEY_KP_0 && keyCode <= GLFW.GLFW_KEY_KP_ADD)
+                || keyCode == GLFW.GLFW_KEY_KP_EQUAL;
+            if (!printable) continue;
+            String key = GLFW.glfwGetKeyName(keyCode, 0);
             if (key != null && !key.isEmpty()) {
                 rangesBuilder.addText(key);
-                rangesBuilder.addText(key.toLowerCase());
-                rangesBuilder.addText(key.toUpperCase());
                 rangesBuilder.addText(key.toLowerCase(Locale.ROOT));
                 rangesBuilder.addText(key.toUpperCase(Locale.ROOT));
             }
@@ -285,6 +285,29 @@ public class ReplayUI {
 
         fontConfig.destroy();
         fonts.clearTexData();
+    }
+
+    private static void addLanguageTranslations(ImFontGlyphRangesBuilder builder, ClientLanguage language) {
+        // ClientLanguage exposes no translation-map accessor in 1.21.1. Its private map is the only
+        // source for the extra glyphs needed by the active resource-pack translations, so locate it
+        // by type rather than relying on its obfuscated field name at runtime.
+        for (Field field : language.getClass().getDeclaredFields()) {
+            if (!Map.class.isAssignableFrom(field.getType()) || !field.trySetAccessible()) {
+                continue;
+            }
+            try {
+                Object value = field.get(language);
+                if (value instanceof Map<?, ?> translations) {
+                    for (Object translation : translations.values()) {
+                        if (translation instanceof String text) {
+                            builder.addText(text);
+                        }
+                    }
+                }
+            } catch (IllegalAccessException ignored) {
+                // The explicitly selected glyph ranges below remain available if reflection is denied.
+            }
+        }
     }
 
     private static void addRanges(ImFontGlyphRangesBuilder builder, short[] ranges) {
@@ -472,7 +495,7 @@ public class ReplayUI {
             return false;
         }
 
-        if (Minecraft.getInstance().gui.hud.isHidden()) {
+        if (Minecraft.getInstance().options.hideGui) {
             return false;
         }
 
@@ -481,7 +504,7 @@ public class ReplayUI {
         if (gameMode.getPlayerMode() != GameType.SPECTATOR) return false;
         if (Minecraft.getInstance().level == null) return false;
         if (Minecraft.getInstance().player == null) return false;
-        if (Minecraft.getInstance().gui.overlay() != null) return false;
+        if (Minecraft.getInstance().getOverlay() != null) return false;
         return true;
     }
 
@@ -508,7 +531,7 @@ public class ReplayUI {
         if (!activeLastFrame) {
             // Make sure the vanilla grab state is correct
             if (Minecraft.getInstance().gameMode != null) {
-                if (Minecraft.getInstance().gui.screen() == null) {
+                if (Minecraft.getInstance().screen == null) {
                     Minecraft.getInstance().mouseHandler.releaseMouse();
                     Minecraft.getInstance().mouseHandler.grabMouse();
                 } else {
@@ -519,7 +542,7 @@ public class ReplayUI {
             }
         } else {
             // Forcefully ungrab the cursor
-            InputConstants.releaseMouse(Minecraft.getInstance().getWindow(), ImGui.getMainViewport().getSizeX()/2f, ImGui.getMainViewport().getSizeY()/2f);
+            Minecraft.getInstance().mouseHandler.releaseMouse();
         }
     }
 
@@ -530,7 +553,9 @@ public class ReplayUI {
     public static void drawOverlay() {
         compositeOnTop = null;
 
-        if (!initialized && Minecraft.getInstance().gui.overlay() instanceof LoadingOverlay) {
+        // Do not build/upload the ImGui font atlas on the title screen. Replay UI
+        // resources are only needed once an active spectator replay is running.
+        if (!initialized && !isActiveInternal()) {
             return;
         }
 
@@ -557,7 +582,7 @@ public class ReplayUI {
             throw new IllegalStateException("Tried to use EditorUI while it was not initialized");
         }
 
-        if (Minecraft.getInstance().gui.screen() instanceof ProgressScreen || Minecraft.getInstance().gui.screen() instanceof LevelLoadingScreen) {
+        if (Minecraft.getInstance().screen instanceof ProgressScreen || Minecraft.getInstance().screen instanceof LevelLoadingScreen) {
             return;
         }
 
@@ -721,7 +746,7 @@ public class ReplayUI {
                 frameHeight = Minecraft.getInstance().getWindow().getScreenHeight();
             }
 
-            if (Minecraft.getInstance().gui.screen() == null && Minecraft.getInstance().gui.overlay() == null) {
+            if (Minecraft.getInstance().screen == null && Minecraft.getInstance().getOverlay() == null) {
                 if (editorState != null && editorState.replayVisuals.ruleOfThirdsGuide) {
                     ImDrawList drawList = ImGui.getBackgroundDrawList();
                     drawList.removeFlags(ImDrawListFlags.AntiAliasedLines);
@@ -845,7 +870,7 @@ public class ReplayUI {
             if (ImGui.isWindowHovered() && ReplayUI.getIO().getMousePosY() > ImGui.getWindowPosY()) {
                 isFrameHovered = true;
 
-                if (Minecraft.getInstance().gui.screen() != null) {
+                if (Minecraft.getInstance().screen != null) {
                     ImGui.setNextFrameWantCaptureMouse(false);
                 } else {
                     boolean isMovingCamera = isMovingCamera();
@@ -1037,7 +1062,7 @@ public class ReplayUI {
     }
 
     public static boolean isCtrlOrCmdDown() {
-        return InputQuirks.REPLACE_CTRL_KEY_WITH_CMD_KEY ? ReplayUI.getIO().getKeySuper() : ReplayUI.getIO().getKeyCtrl();
+        return Util.getPlatform() == Util.OS.OSX ? ReplayUI.getIO().getKeySuper() : ReplayUI.getIO().getKeyCtrl();
     }
 
 }

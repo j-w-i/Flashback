@@ -4,7 +4,7 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
 import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
 import com.mojang.blaze3d.audio.Library;
 import com.moulberry.flashback.Flashback;
-import org.jspecify.annotations.Nullable;
+import org.jetbrains.annotations.Nullable;
 import org.lwjgl.openal.ALC10;
 import org.lwjgl.openal.SOFTLoopback;
 import org.lwjgl.system.MemoryStack;
@@ -34,12 +34,12 @@ public class MixinAudioLibrary {
         }
     }
 
-    @WrapOperation(method = "init", at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/audio/Library;openDeviceOrFallback(Ljava/lang/String;Ljava/lang/String;)J"))
-    public long init_openDevice(@Nullable final String preferredDevice, @Nullable final String systemDefaultDevice, Operation<Long> original) {
+    @WrapOperation(method = "init", at = @At(value = "INVOKE", target = "Lcom/mojang/blaze3d/audio/Library;openDeviceOrFallback(Ljava/lang/String;)J"))
+    public long init_openDevice(@Nullable final String preferredDevice, Operation<Long> original) {
         if (this.usingLoopbackDevice) {
             return SOFTLoopback.alcLoopbackOpenDeviceSOFT((CharSequence) null);
         } else {
-            return original.call(preferredDevice, systemDefaultDevice);
+            return original.call(preferredDevice);
         }
     }
 

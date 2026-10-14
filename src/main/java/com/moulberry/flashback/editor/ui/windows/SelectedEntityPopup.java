@@ -1,7 +1,7 @@
 package com.moulberry.flashback.editor.ui.windows;
 
 import com.mojang.authlib.GameProfile;
-import com.mojang.authlib.services.ProfileResult;
+import com.mojang.authlib.yggdrasil.ProfileResult;
 import com.moulberry.flashback.FilePlayerSkin;
 import com.moulberry.flashback.Utils;
 import com.moulberry.flashback.combo_options.GlowingOverride;
@@ -16,7 +16,6 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.client.player.AbstractClientPlayer;
 import net.minecraft.client.resources.language.I18n;
 import net.minecraft.commands.arguments.EntityAnchorArgument;
-import net.minecraft.world.entity.Avatar;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.LivingEntity;
@@ -36,6 +35,16 @@ import com.moulberry.flashback.keyframe.handler.MinecraftKeyframeHandler;
 
 public class SelectedEntityPopup {
 
+    private static boolean isSpectatorPlayer(Player player) {
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.player == player) {
+            return minecraft.gameMode != null && minecraft.gameMode.getPlayerMode() == GameType.SPECTATOR;
+        }
+        var connection = minecraft.getConnection();
+        var playerInfo = connection == null ? null : connection.getPlayerInfo(player.getUUID());
+        return playerInfo != null && playerInfo.getGameMode() == GameType.SPECTATOR;
+    }
+
     private static ImString changeSkinInput = ImGuiHelper.createResizableImString("");
     static {
         changeSkinInput.inputData.allowedChars = "0123456789abcdef-";
@@ -52,7 +61,7 @@ public class SelectedEntityPopup {
 
         GameProfile skinOverride = editorState.skinOverride.get(entity.getUUID());
         if (skinOverride != null) {
-            changeSkinInput.set(skinOverride.id().toString());
+            changeSkinInput.set(skinOverride.getId().toString());
         } else {
             changeSkinInput.set("");
         }
@@ -105,7 +114,7 @@ public class SelectedEntityPopup {
         }
 
         boolean isHiddenDuringExport;
-        if (editorState.hideAllSpectators && entity instanceof Player player && player.gameMode() == GameType.SPECTATOR) {
+        if (editorState.hideAllSpectators && entity instanceof Player player && isSpectatorPlayer(player)) {
             isHiddenDuringExport = true;
             ImGui.beginDisabled();
             ImGui.checkbox(I18n.get("flashback.hide_during_export"), true);
@@ -129,7 +138,7 @@ public class SelectedEntityPopup {
                     if (ImGui.checkbox(I18n.get("flashback.hide_cape"), true)) {
                         editorState.hideCape.remove(player.getUUID());
                     }
-                } else if (player.isModelPartShown(PlayerModelPart.CAPE) && player.getSkin().cape() != null) {
+                } else if (player.isModelPartShown(PlayerModelPart.CAPE) && player.getPlayerInfo() != null && player.getSkin().capeTexture() != null) {
                     if (ImGui.checkbox(I18n.get("flashback.hide_cape"), false)) {
                         editorState.hideCape.add(player.getUUID());
                     }
@@ -209,7 +218,7 @@ public class SelectedEntityPopup {
                     try {
                         UUID changeSkinUuid = UUID.fromString(string);
                         if (ImGui.button(I18n.get("flashback.apply_skin_from_uuid"))) {
-                            ProfileResult profile = Minecraft.getInstance().services().sessionService().fetchProfile(changeSkinUuid, true);
+                            ProfileResult profile = Minecraft.getInstance().getMinecraftSessionService().fetchProfile(changeSkinUuid, true);
                             if (profile != null) {
                                 editorState.skinOverride.put(entity.getUUID(), profile.profile());
                                 editorState.skinOverrideFromFile.remove(entity.getUUID());
@@ -252,7 +261,7 @@ public class SelectedEntityPopup {
                     boolean changed = false;
 
                     for (EquipmentSlot value : EquipmentSlot.values()) {
-                        if (entity instanceof Player && (value == EquipmentSlot.BODY || value == EquipmentSlot.SADDLE)) {
+                        if (entity instanceof Player && (value == EquipmentSlot.BODY)) {
                             continue;
                         }
 
@@ -276,7 +285,7 @@ public class SelectedEntityPopup {
                     }
                 }
             }
-            if (entity instanceof Avatar avatar) {
+            if (entity instanceof Player avatar) {
                 if (ImGui.collapsingHeader("Model Parts")) {
                     EnumSet<PlayerModelPart> hiddenModelParts = editorState.hiddenModelParts.get(entity.getUUID());
 

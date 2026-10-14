@@ -42,7 +42,7 @@ public class PerfectFrames {
         long start = System.currentTimeMillis();
         while (!isFrameReady(start)) {
             LockSupport.parkNanos("waiting for frame to be ready", 100000L);
-            Minecraft.getInstance().runAllTasks();
+            while (Minecraft.getInstance().pollTask()) {}
         }
     }
 
@@ -61,7 +61,7 @@ public class PerfectFrames {
                         continue;
                     }
                     PlayerInfo playerInfo = player.getPlayerInfo();
-                    if (playerInfo != null && !skinManager.get(playerInfo.getProfile()).isDone()) {
+                    if (playerInfo != null && !skinManager.getOrLoad(playerInfo.getProfile()).isDone()) {
                         Flashback.LOGGER.error("Took too long to load skin for {}", player.getUUID());
                         ignoreSkinLoading.add(player.getUUID());
                     }
@@ -75,7 +75,7 @@ public class PerfectFrames {
                         continue;
                     }
                     PlayerInfo playerInfo = player.getPlayerInfo();
-                    if (playerInfo != null && !skinManager.get(playerInfo.getProfile()).isDone()) {
+                    if (playerInfo != null && !skinManager.getOrLoad(playerInfo.getProfile()).isDone()) {
                         return false;
                     }
                 }

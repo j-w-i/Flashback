@@ -9,8 +9,6 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.network.ConnectionProtocol;
 import net.minecraft.network.protocol.game.ClientboundBlockUpdatePacket;
-import net.minecraft.network.protocol.game.ClientboundSoundEntityPacket;
-import net.minecraft.network.protocol.game.ClientboundSoundPacket;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.sounds.SoundSource;
 import net.minecraft.world.entity.Entity;
@@ -47,29 +45,29 @@ public class MixinClientLevel {
     }
 
     @Inject(method = "levelEvent", at = @At("HEAD"))
-    public void levelEvent(Entity player, int type, BlockPos blockPos, int data, CallbackInfo ci) {
-        if (Flashback.RECORDER != null && !Flashback.RECORDER.isPaused()) {
+    public void levelEvent(Player player, int type, BlockPos blockPos, int data, CallbackInfo ci) {
+        if (Minecraft.getInstance().level == (Object) this && Flashback.RECORDER != null && !Flashback.RECORDER.isPaused()) {
             Flashback.RECORDER.writeLevelEvent(type, blockPos, data, false);
         }
     }
 
     @Inject(method = "globalLevelEvent", at = @At("HEAD"))
     public void globalLevelEvent(int type, BlockPos blockPos, int data, CallbackInfo ci) {
-        if (Flashback.RECORDER != null && !Flashback.RECORDER.isPaused()) {
+        if (Minecraft.getInstance().level == (Object) this && Flashback.RECORDER != null && !Flashback.RECORDER.isPaused()) {
             Flashback.RECORDER.writeLevelEvent(type, blockPos, data, true);
         }
     }
 
-    @Inject(method = "playSeededSound(Lnet/minecraft/world/entity/Entity;Lnet/minecraft/world/entity/Entity;Lnet/minecraft/core/Holder;Lnet/minecraft/sounds/SoundSource;FFJ)V", at = @At("RETURN"))
-    public void playSeededSoundEntity(@Nullable Entity player, Entity entity, Holder<SoundEvent> holder, SoundSource soundSource, float volume, float pitch, long seed, CallbackInfo ci) {
-        if (player != null && player == this.minecraft.player && Flashback.RECORDER != null && !Flashback.RECORDER.isPaused()) {
+    @Inject(method = "playSeededSound(Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/world/entity/Entity;Lnet/minecraft/core/Holder;Lnet/minecraft/sounds/SoundSource;FFJ)V", at = @At("RETURN"))
+    public void playSeededSoundEntity(@Nullable Player player, Entity entity, Holder<SoundEvent> holder, SoundSource soundSource, float volume, float pitch, long seed, CallbackInfo ci) {
+        if (player != null && player == Minecraft.getInstance().player && Minecraft.getInstance().level == (Object) this && Flashback.RECORDER != null && !Flashback.RECORDER.isPaused()) {
             Flashback.RECORDER.writeEntitySound(holder, soundSource, entity, volume, pitch, seed);
         }
     }
 
-    @Inject(method = "playSeededSound(Lnet/minecraft/world/entity/Entity;DDDLnet/minecraft/core/Holder;Lnet/minecraft/sounds/SoundSource;FFJ)V", at = @At("RETURN"))
-    public void playSeededSoundNormal(@Nullable Entity player, double x, double y, double z, Holder<SoundEvent> holder, SoundSource soundSource, float volume, float pitch, long seed, CallbackInfo ci) {
-        if (player != null && player == this.minecraft.player && Flashback.RECORDER != null && !Flashback.RECORDER.isPaused()) {
+    @Inject(method = "playSeededSound(Lnet/minecraft/world/entity/player/Player;DDDLnet/minecraft/core/Holder;Lnet/minecraft/sounds/SoundSource;FFJ)V", at = @At("RETURN"))
+    public void playSeededSoundNormal(@Nullable Player player, double x, double y, double z, Holder<SoundEvent> holder, SoundSource soundSource, float volume, float pitch, long seed, CallbackInfo ci) {
+        if (player != null && player == Minecraft.getInstance().player && Minecraft.getInstance().level == (Object) this && Flashback.RECORDER != null && !Flashback.RECORDER.isPaused()) {
             Flashback.RECORDER.writeSound(holder, soundSource, x, y, z, volume, pitch, seed);
         }
     }

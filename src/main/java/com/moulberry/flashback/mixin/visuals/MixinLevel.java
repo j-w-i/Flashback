@@ -2,14 +2,9 @@ package com.moulberry.flashback.mixin.visuals;
 
 import com.moulberry.flashback.state.EditorState;
 import com.moulberry.flashback.state.EditorStateManager;
-import com.moulberry.flashback.visuals.ReplayVisuals;
 import net.minecraft.client.multiplayer.ClientLevel;
-import net.minecraft.core.BlockPos;
-import net.minecraft.world.entity.Entity;
 import net.minecraft.world.level.Level;
-import org.jetbrains.annotations.Nullable;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
@@ -40,11 +35,16 @@ public abstract class MixinLevel {
         }
     }
 
-    @Inject(method = {"getDefaultClockTime", "getOverworldClockTime"}, at = @At("HEAD"), cancellable = true, require = 0)
-    public void getDefaultClockTime(CallbackInfoReturnable<Long> cir) {
+    /**
+     * 1.21.1 has no default/overworld clock-time getters. Its normalized celestial time is derived
+     * from Level#getDayTime, so override that client-side clock only while a replay visual override
+     * is active.
+     */
+    @Inject(method = "getDayTime()J", at = @At("HEAD"), cancellable = true)
+    public void getDayTime(CallbackInfoReturnable<Long> cir) {
         EditorState editorState = EditorStateManager.getCurrent();
         if (editorState != null && (Object)this instanceof ClientLevel && editorState.replayVisuals.overrideTimeOfDay >= 0) {
-            cir.setReturnValue(editorState.replayVisuals.overrideTimeOfDay);
+            cir.setReturnValue((long) Math.floorMod(editorState.replayVisuals.overrideTimeOfDay, 24000));
         }
     }
 

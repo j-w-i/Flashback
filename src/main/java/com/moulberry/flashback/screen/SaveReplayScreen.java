@@ -4,7 +4,7 @@ import com.moulberry.flashback.Flashback;
 import com.moulberry.flashback.FlashbackTextComponents;
 import com.moulberry.flashback.record.ReplayExporter;
 import com.moulberry.flashback.utils.AsyncFileDialogs;
-import net.minecraft.util.FileUtil;
+import net.minecraft.FileUtil;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
@@ -89,15 +89,15 @@ public class SaveReplayScreen extends Screen {
 
         rowHelper.addChild(Button.builder(FlashbackTextComponents.SAVE_REPLAY, button -> {
             this.saveReplay();
-            Minecraft.getInstance().gui.setScreen(this.previousScreen);
+            Minecraft.getInstance().setScreen(this.previousScreen);
         }).width(98).build(), 1);
         rowHelper.addChild(Button.builder(FlashbackTextComponents.DELETE_REPLAY, button -> {
-            Minecraft.getInstance().gui.setScreen(new ConfirmScreen(value -> {
+            Minecraft.getInstance().setScreen(new ConfirmScreen(value -> {
                 if (value) {
                     this.deleteReplay();
-                    Minecraft.getInstance().gui.setScreen(this.previousScreen);
+                    Minecraft.getInstance().setScreen(this.previousScreen);
                 } else {
-                    Minecraft.getInstance().gui.setScreen(SaveReplayScreen.this);
+                    Minecraft.getInstance().setScreen(SaveReplayScreen.this);
                 }
             }, FlashbackTextComponents.CONFIRM_DELETE_REPLAY, FlashbackTextComponents.CONFIRM_DELETE_REPLAY_MESSAGE));
         }).width(98).build(), 1);
@@ -118,14 +118,14 @@ public class SaveReplayScreen extends Screen {
         super.tick();
 
         if (!Files.exists(this.recordFolder)) {
-            Minecraft.getInstance().gui.setScreen(new AlertScreen(() -> Minecraft.getInstance().gui.setScreen(this.previousScreen),
+            Minecraft.getInstance().setScreen(new AlertScreen(() -> Minecraft.getInstance().setScreen(this.previousScreen),
                 FlashbackTextComponents.ERROR_SAVING_REPLAY, FlashbackTextComponents.RECORDING_FOLDER_MISSING));
         }
     }
 
     private void saveReplay() {
         if (!Files.exists(this.recordFolder)) {
-            Minecraft.getInstance().gui.setScreen(new AlertScreen(() -> Minecraft.getInstance().gui.setScreen(this.previousScreen),
+            Minecraft.getInstance().setScreen(new AlertScreen(() -> Minecraft.getInstance().setScreen(this.previousScreen),
                 FlashbackTextComponents.ERROR_SAVING_REPLAY, FlashbackTextComponents.RECORDING_FOLDER_MISSING));
             return;
         }

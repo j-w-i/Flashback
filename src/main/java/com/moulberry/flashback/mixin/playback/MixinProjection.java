@@ -1,74 +1,59 @@
 package com.moulberry.flashback.mixin.playback;
 
-import com.mojang.blaze3d.systems.RenderSystem;
-import com.moulberry.flashback.ext.ProjectionExt;
-import net.minecraft.client.renderer.Projection;
+import com.moulberry.flashback.Flashback;
+import com.moulberry.flashback.combo_options.ExportProjection;
+import com.moulberry.flashback.exporting.ExportJob;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.renderer.GameRenderer;
 import org.joml.Matrix4f;
-import org.spongepowered.asm.mixin.Final;
 import org.spongepowered.asm.mixin.Mixin;
-import org.spongepowered.asm.mixin.Shadow;
-import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
-import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
-@Mixin(Projection.class)
-public class MixinProjection implements ProjectionExt {
+/**
+ * Minecraft 1.21.1 has no separate {@code Projection} object. Its projection is built by
+ * {@link GameRenderer#getProjectionMatrix(double)}, so export projections are substituted there.
+ */
+@Mixin(GameRenderer.class)
+public abstract class MixinProjection {
 
-    @Shadow
-    private boolean isMatrixDirty;
-    @Shadow
-    private long matrixVersion;
-    @Shadow
-    @Final
-    private Matrix4f matrix;
-    @Shadow
-    private float width;
-    @Shadow
-    private float height;
-    @Shadow
-    private boolean orthoInvertY;
-    @Shadow
-    private float zNear;
-    @Shadow
-    private float zFar;
-    @Unique
-    private boolean centeredOrtho = false;
-
-    @Override
-    public void flashback$setCenteredOrtho(boolean centered) {
-        if (this.centeredOrtho != centered) {
-            this.centeredOrtho = centered;
-            this.isMatrixDirty = true;
+    @Inject(method = "getProjectionMatrix", at = @At("RETURN"), cancellable = true, require = 0)
+    private void flashback$exportProjection(double fov, CallbackInfoReturnable<Matrix4f> cir) {
+        ExportJob exportJob = Flashback.EXPORT_JOB;
+        if (exportJob == null) {
+            return;
         }
-    }
 
-    @Inject(method = "setupPerspective", at = @At("HEAD"))
-    public void setupPerspective(CallbackInfo ci) {
-        this.flashback$setCenteredOrtho(false);
-    }
-
-    @Inject(method = "setupOrtho", at = @At("HEAD"))
-    public void setupOrtho(CallbackInfo ci) {
-        this.flashback$setCenteredOrtho(false);
-    }
-
-    @Inject(method = "getMatrix", at = @At("HEAD"), cancellable = true)
-    public void getMatrix(Matrix4f dest, CallbackInfoReturnable<Matrix4f> cir) {
-        if (this.isMatrixDirty && this.centeredOrtho) {
-            this.isMatrixDirty = false;
-            this.matrixVersion++;
-            cir.setReturnValue(dest.set(this.matrix.setOrtho(
-                -this.width/2f,
-                this.width/2f,
-                this.orthoInvertY ? this.height/2f : -this.height/2f,
-                this.orthoInvertY ? -this.height/2f : this.height/2f,
-                this.zNear,
-                this.zFar,
-                RenderSystem.getDevice().getDeviceInfo().isZZeroToOne()
-            )));
+        ExportProjection projection = exportJob.getSettings().projection();
+        if (projection != ExportProjection.ORTHOGRAPHIC
+                && projection != ExportProjection.CUBE_MAP
+                && projection != ExportProjection.EQUIRECTANGULAR) {
+            return;
         }
-    }
 
+        Minecraft minecraft = Minecraft.getInstance();
+        float far = minecraft.options.renderDistance().get() * 16.0F;
+        float aspect = projection == ExportProjection.ORTHOGRAPHIC
+                ? (float) minecraft.getWindow().getWidth() / Math.max(1, minecraft.getWindow().getHeight())
+                : 1.0F;
+        Matrix4f exportMatrix;
+
+        if (projection == ExportProjection.ORTHOGRAPHIC) {
+            float fovDegrees = (float) fov;
+            float orthoHeight = (float) (Math.tan(Math.toRadians(fovDegrees / 2.0F)) * far / 4.0F)
+                    / exportJob.getSettings().orthographicZoom();
+            float orthoWidth = aspect * orthoHeight;
+            exportMatrix = new Matrix4f().setOrtho(
+                    -orthoWidth / 2.0F, orthoWidth / 2.0F,
+                    -orthoHeight / 2.0F, orthoHeight / 2.0F,
+                    -far, far
+            );
+        } else {
+            // The panorama/cube-map renderer renders square faces even when the export canvas is not square.
+            exportMatrix = new Matrix4f().perspective((float) Math.toRadians(fov), aspect, 0.05F, far);
+        }
+
+        cir.setReturnValue(exportMatrix);
+    }
 }

@@ -1,138 +1,119 @@
 package com.moulberry.flashback.utils;
 
 import com.moulberry.flashback.Flashback;
-import net.minecraft.client.Minecraft;
-import org.lwjgl.sdl.SDLDialog;
-import org.lwjgl.sdl.SDLError;
-import org.lwjgl.sdl.SDL_DialogFileFilter;
-import org.lwjgl.system.MemoryUtil;
 
-import java.nio.ByteBuffer;
+import javax.swing.JFileChooser;
+import javax.swing.filechooser.FileNameExtensionFilter;
+import javax.swing.SwingUtilities;
+import java.io.File;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.Function;
 
-public class AsyncFileDialogs {
+/** Asynchronous native file and folder pickers for replay workflows. */
+public final class AsyncFileDialogs {
 
-    private static CompletableFuture<String> currentSaveOrOpenFileDialog = null;
+    private static volatile CompletableFuture<String> currentSaveOrOpenFileDialog;
+
+    private AsyncFileDialogs() {
+    }
 
     public static boolean hasDialog() {
         return currentSaveOrOpenFileDialog != null;
     }
 
-    private record FileFilter(SDL_DialogFileFilter.Buffer buffer, ByteBuffer encodedFilterDescription, ByteBuffer encodedFilter) {
-        private void free() {
-            this.buffer.free();
-            MemoryUtil.memFree(this.encodedFilterDescription);
-            MemoryUtil.memFree(this.encodedFilter);
+    private static CompletableFuture<String> showDialog(Function<JFileChooser, String> dialog) {
+        synchronized (AsyncFileDialogs.class) {
+            if (currentSaveOrOpenFileDialog != null) {
+                return CompletableFuture.completedFuture(null);
+            }
+
+            CompletableFuture<String> future = new CompletableFuture<>();
+            currentSaveOrOpenFileDialog = future;
+            SwingUtilities.invokeLater(() -> {
+                try {
+                    JFileChooser chooser = new JFileChooser();
+                    String selected = dialog.apply(chooser);
+                    future.complete(selected);
+                } catch (Throwable t) {
+                    Flashback.LOGGER.error("Could not open file dialog", t);
+                    future.complete(null);
+                } finally {
+                    synchronized (AsyncFileDialogs.class) {
+                        if (currentSaveOrOpenFileDialog == future) {
+                            currentSaveOrOpenFileDialog = null;
+                        }
+                    }
+                }
+            });
+            return future;
         }
     }
 
-    private static FileFilter createFilterBuffer(String filterDescription, String... filters) {
-        StringBuilder filterBuilder = new StringBuilder();
-
-        for (String filter : filters) {
-            if (!filterBuilder.isEmpty()) filterBuilder.append(";");
-            filterBuilder.append(filter(filter));
+    private static void setDirectory(JFileChooser chooser, String path) {
+        if (path == null || path.isBlank()) {
+            return;
         }
+        File file = new File(path);
+        if (file.isDirectory()) {
+            chooser.setCurrentDirectory(file);
+        } else if (file.getParentFile() != null) {
+            chooser.setCurrentDirectory(file.getParentFile());
+        }
+    }
 
-        SDL_DialogFileFilter.Buffer fileFilter = SDL_DialogFileFilter.calloc(1);
-        ByteBuffer encodedFilterDescription = MemoryUtil.memUTF8(filter(filterDescription), true);
-        ByteBuffer encodedFilter = MemoryUtil.memUTF8(filter(filterBuilder.toString()), true);
-        fileFilter.get(0)
-                  .name(encodedFilterDescription)
-                  .pattern(encodedFilter);
-
-        return new FileFilter(fileFilter, encodedFilterDescription, encodedFilter);
+    private static void addFilters(JFileChooser chooser, String description, String... filters) {
+        if (filters.length == 0) {
+            return;
+        }
+        chooser.setAcceptAllFileFilterUsed(true);
+        String[] extensions = new String[filters.length];
+        for (int i = 0; i < filters.length; i++) {
+            String extension = filters[i].trim();
+            while (extension.startsWith("*.")) {
+                extension = extension.substring(2);
+            }
+            while (extension.startsWith(".")) {
+                extension = extension.substring(1);
+            }
+            extensions[i] = extension;
+        }
+        chooser.addChoosableFileFilter(new FileNameExtensionFilter(filter(description), extensions));
     }
 
     public static CompletableFuture<String> saveFileDialog(String defaultPath, String defaultName, String filterDescription, String... filters) {
-        if (hasDialog()) return CompletableFuture.completedFuture(null);
-
-        currentSaveOrOpenFileDialog = new CompletableFuture<>();
-        CompletableFuture<String> future = currentSaveOrOpenFileDialog;
-
-        String defaultLocation = filter(defaultPath + "/" + defaultName);
-
-        var fileFilter = createFilterBuffer(filterDescription, filters);
-        String autoExtension = filters.length == 1 ? filters[0] : null;
-
-        long window = Minecraft.getInstance().getWindow().handle();
-        SDLDialog.SDL_ShowSaveFileDialog((userdata, filelist, selectedFilter) -> {
-            fileFilter.free();
-
-            if (future == currentSaveOrOpenFileDialog) {
-                currentSaveOrOpenFileDialog = null;
+        return showDialog(chooser -> {
+            setDirectory(chooser, defaultPath);
+            addFilters(chooser, filterDescription, filters);
+            chooser.setSelectedFile(new File(defaultName == null ? "" : filter(defaultName)));
+            if (chooser.showSaveDialog(null) != JFileChooser.APPROVE_OPTION) {
+                return null;
             }
-
-            if (filelist == MemoryUtil.NULL) {
-                Flashback.LOGGER.error("Error occurred during save file dialog: {}", SDLError.SDL_GetError());
-                future.complete(null);
-                return;
+            File selected = chooser.getSelectedFile();
+            String extension = filters.length == 1 ? filters[0] : null;
+            String result = selected.getAbsolutePath();
+            if (extension != null && !extension.isBlank() && !selected.getName().contains(".")) {
+                result += "." + extension.replaceFirst("^\\*?\\.?", "");
             }
-
-            long filePtr = MemoryUtil.memGetAddress(filelist);
-            String result = MemoryUtil.memUTF8Safe(filePtr);
-            if (result != null && autoExtension != null && result.indexOf('.') < 0) {
-                result = result + "." + autoExtension;
-            }
-            future.complete(result);
-        }, 0, window, fileFilter.buffer(), defaultLocation);
-
-        return future;
+            return result;
+        });
     }
 
     public static CompletableFuture<String> openFileDialog(String defaultPath, String filterDescription, String... filters) {
-        if (hasDialog()) return CompletableFuture.completedFuture(null);
-
-        currentSaveOrOpenFileDialog = new CompletableFuture<>();
-        CompletableFuture<String> future = currentSaveOrOpenFileDialog;
-
-        var fileFilter = createFilterBuffer(filterDescription, filters);
-
-        long window = Minecraft.getInstance().getWindow().handle();
-        SDLDialog.SDL_ShowOpenFileDialog((userdata, filelist, selectedFilter) -> {
-            fileFilter.free();
-
-            if (future == currentSaveOrOpenFileDialog) {
-                currentSaveOrOpenFileDialog = null;
-            }
-
-            if (filelist == MemoryUtil.NULL) {
-                Flashback.LOGGER.error("Error occurred during open file dialog: {}", SDLError.SDL_GetError());
-                future.complete(null);
-                return;
-            }
-
-            long filePtr = MemoryUtil.memGetAddress(filelist);
-            future.complete(MemoryUtil.memUTF8Safe(filePtr));
-        }, 0, window, fileFilter.buffer(), filter(defaultPath), false);
-
-        return future;
+        return showDialog(chooser -> {
+            setDirectory(chooser, defaultPath);
+            addFilters(chooser, filterDescription, filters);
+            return chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION
+                    ? chooser.getSelectedFile().getAbsolutePath() : null;
+        });
     }
 
-
     public static CompletableFuture<String> openFolderDialog(String defaultPath) {
-        if (hasDialog()) return CompletableFuture.completedFuture(null);
-
-        currentSaveOrOpenFileDialog = new CompletableFuture<>();
-        CompletableFuture<String> future = currentSaveOrOpenFileDialog;
-
-        long window = Minecraft.getInstance().getWindow().handle();
-        SDLDialog.SDL_ShowOpenFolderDialog((userdata, filelist, selectedFilter) -> {
-            if (future == currentSaveOrOpenFileDialog) {
-                currentSaveOrOpenFileDialog = null;
-            }
-
-            if (filelist == MemoryUtil.NULL) {
-                Flashback.LOGGER.error("Error occurred during open folder dialog: {}", SDLError.SDL_GetError());
-                future.complete(null);
-                return;
-            }
-
-            long filePtr = MemoryUtil.memGetAddress(filelist);
-            future.complete(MemoryUtil.memUTF8Safe(filePtr));
-        }, 0, window, filter(defaultPath), false);
-
-        return future;
+        return showDialog(chooser -> {
+            setDirectory(chooser, defaultPath);
+            chooser.setFileSelectionMode(JFileChooser.DIRECTORIES_ONLY);
+            return chooser.showOpenDialog(null) == JFileChooser.APPROVE_OPTION
+                    ? chooser.getSelectedFile().getAbsolutePath() : null;
+        });
     }
 
     public static String filter(CharSequence in) {
@@ -147,9 +128,10 @@ public class AsyncFileDialogs {
         StringBuilder builder = new StringBuilder();
         for (int i = 0; i < in.length(); i++) {
             char c = in.charAt(i);
-            if (c >= 32 || c == '\n') builder.append(c);
+            if (c >= 32 || c == '\n') {
+                builder.append(c);
+            }
         }
         return builder.toString();
     }
-
 }

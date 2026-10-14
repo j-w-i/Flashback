@@ -6,7 +6,7 @@ import com.moulberry.flashback.playback.ReplayServer;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.network.protocol.game.ClientboundMerchantOffersPacket;
-import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.ItemStack;
 
@@ -148,7 +148,7 @@ public final class GuiDisplayForwarder {
     }
 
     private static String nameOf(MenuType<?> menuType) {
-        Identifier id = BuiltInRegistries.MENU.getKey(menuType);
+        ResourceLocation id = BuiltInRegistries.MENU.getKey(menuType);
         return id == null ? "" : id.toString();
     }
 

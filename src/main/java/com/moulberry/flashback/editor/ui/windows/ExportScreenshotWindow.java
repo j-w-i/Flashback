@@ -88,7 +88,7 @@ public class ExportScreenshotWindow {
                 }
             }
 
-            boolean isFullscreen = Minecraft.getInstance().getWindow().isExclusiveFullscreen();
+            boolean isFullscreen = Minecraft.getInstance().getWindow().isFullscreen();
             if (isFullscreen) {
                 ImGui.separator();
                 ImGui.textWrapped(I18n.get("flashback.export_disable_fullscreen"));

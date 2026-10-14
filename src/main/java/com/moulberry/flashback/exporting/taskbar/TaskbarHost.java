@@ -5,9 +5,8 @@ import com.sun.jna.Pointer;
 import com.sun.jna.platform.win32.*;
 import com.sun.jna.ptr.PointerByReference;
 import net.minecraft.client.Minecraft;
-import net.minecraft.util.Util;
-import org.lwjgl.sdl.SDLProperties;
-import org.lwjgl.sdl.SDLVideo;
+import net.minecraft.Util;
+import org.lwjgl.glfw.GLFWNativeWin32;
 
 public class TaskbarHost {
     public static ITaskbar createTaskbar() {
@@ -34,8 +33,8 @@ public class TaskbarHost {
             throw new IllegalStateException("Failed to create ITaskbar3");
         }
 
-        int windowProperties = SDLVideo.SDL_GetWindowProperties(Minecraft.getInstance().getWindow().handle());
-        long win32Hwnd = SDLProperties.SDL_GetPointerProperty(windowProperties, SDLVideo.SDL_PROP_WINDOW_WIN32_HWND_POINTER, 0);
+        long windowHandle = Minecraft.getInstance().getWindow().getWindow();
+        long win32Hwnd = GLFWNativeWin32.glfwGetWin32Window(windowHandle);
         if (win32Hwnd == 0) {
             throw new RuntimeException("Failed to get Win32 Window");
         }

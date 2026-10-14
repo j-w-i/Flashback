@@ -1,96 +1,62 @@
 package com.moulberry.flashback.exporting;
 
 import com.mojang.blaze3d.pipeline.RenderTarget;
+import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.systems.RenderSystem;
-import com.mojang.renderpearl.api.GpuFormat;
-import com.mojang.renderpearl.api.commands.RenderPass;
-import com.mojang.renderpearl.api.textures.FilterMode;
-import com.mojang.renderpearl.api.textures.GpuTexture;
-import com.mojang.renderpearl.api.textures.GpuTextureView;
 import com.moulberry.flashback.editor.ui.ReplayUI;
-import com.moulberry.flashback.visuals.ShaderManager;
 import org.jetbrains.annotations.Nullable;
-import org.joml.Vector4f;
+import org.lwjgl.opengl.GL11C;
+import org.lwjgl.opengl.GL30C;
 
 import java.nio.FloatBuffer;
 import java.util.ArrayDeque;
 import java.util.Objects;
-import java.util.Optional;
 
+/** PBO-backed, ordered framebuffer readback queue for export. */
 public class SaveableFramebufferQueue implements AutoCloseable {
-
-    private static final Vector4f CLEAR_COLOR = new Vector4f(0.0f);
-
     private final int width;
     private final int height;
-
     private final ArrayDeque<SaveableFramebuffer> available = new ArrayDeque<>();
     private final ArrayDeque<SaveableFramebuffer> waiting = new ArrayDeque<>();
-
-    private final GpuTexture flipBuffer;
-    private final GpuTextureView flipBufferView;
-    private final GpuTexture flipDepthBuffer;
-    private final GpuTextureView flipDepthBufferView;
-
-    private final TransformDepthUniform transformDepthUniform = new TransformDepthUniform();
+    private final TextureTarget flipBuffer;
+    private final TransformDepthUniform transformDepth = new TransformDepthUniform();
 
     public SaveableFramebufferQueue(int width, int height) {
         this.width = width;
         this.height = height;
-
-        this.flipBuffer = RenderSystem.getDevice().createTexture(() -> "flip buffer", GpuTexture.USAGE_COPY_DST | GpuTexture.USAGE_RENDER_ATTACHMENT,
-            GpuFormat.RGBA8_UNORM, width, height, 1, 1);
-        this.flipBufferView = RenderSystem.getDevice().createTextureView(this.flipBuffer);
-
-        this.flipDepthBuffer = RenderSystem.getDevice().createTexture(() -> "flip depth buffer", GpuTexture.USAGE_COPY_DST | GpuTexture.USAGE_RENDER_ATTACHMENT,
-            GpuFormat.R32_FLOAT, width, height, 1, 1);
-        this.flipDepthBufferView = RenderSystem.getDevice().createTextureView(this.flipDepthBuffer);
+        this.flipBuffer = new TextureTarget(width, height, false, false);
     }
 
     public SaveableFramebuffer take() {
-        if (this.available.isEmpty()) {
-            return new SaveableFramebuffer(this.width, this.height);
-        } else {
-            return this.available.removeFirst();
+        SaveableFramebuffer buffer = this.available.pollFirst();
+        return buffer != null ? buffer : new SaveableFramebuffer(this.width, this.height);
+    }
+
+    private void blitFlip(RenderTarget source, boolean supersampling) {
+        int readFramebuffer = GL11C.glGetInteger(GL30C.GL_READ_FRAMEBUFFER_BINDING);
+        int drawFramebuffer = GL11C.glGetInteger(GL30C.GL_DRAW_FRAMEBUFFER_BINDING);
+        int filter = supersampling ? GL11C.GL_LINEAR : GL11C.GL_NEAREST;
+        try {
+            GL30C.glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, source.frameBufferId);
+            GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, this.flipBuffer.frameBufferId);
+            GL30C.glBlitFramebuffer(0, 0, this.width, this.height,
+                0, this.height, this.width, 0, GL11C.GL_COLOR_BUFFER_BIT, filter);
+        } finally {
+            GL30C.glBindFramebuffer(GL30C.GL_READ_FRAMEBUFFER, readFramebuffer);
+            GL30C.glBindFramebuffer(GL30C.GL_DRAW_FRAMEBUFFER, drawFramebuffer);
         }
     }
 
-    private void blitFlip(RenderTarget src, boolean supersampling) {
-        FilterMode filterMode = supersampling ? FilterMode.LINEAR : FilterMode.NEAREST;
-
-        try (RenderPass renderPass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(() -> "flashback flip pass", this.flipBufferView, Optional.of(CLEAR_COLOR))) {
-            renderPass.setPipeline(RenderSystem.getCompiledPipeline(ShaderManager.BLIT_SCREEN_FLIP));
-            RenderSystem.bindDefaultUniforms(renderPass);
-            renderPass.setUniform("InSampler", src.getColorTextureView(), RenderSystem.getSamplerCache().getClampToEdge(filterMode));
-            renderPass.draw(3, 1, 0, 0);
-        }
-    }
-
-    private void blitTransformDepth(RenderTarget src) {
-        var uniforms = this.transformDepthUniform.getOrUpdate(ReplayUI.lastProjectionMatrix);
-
-        try (RenderPass renderPass = RenderSystem.getDevice().createCommandEncoder().createRenderPass(() -> "flashback depth flip pass", this.flipDepthBufferView, Optional.of(CLEAR_COLOR))) {
-            renderPass.setPipeline(RenderSystem.getCompiledPipeline(ShaderManager.BLIT_TRANSFORM_DEPTH));
-            RenderSystem.bindDefaultUniforms(renderPass);
-            renderPass.setUniform("TransformDepth", uniforms);
-            renderPass.setUniform("InSampler", src.getDepthTextureView(), RenderSystem.getSamplerCache().getClampToEdge(FilterMode.NEAREST));
-            renderPass.draw(3, 1, 0, 0);
-        }
-    }
-
-    public void startDownload(RenderTarget target, SaveableFramebuffer texture, boolean supersampling) {
-        // Do an inline flip
+    public void startDownload(RenderTarget target, SaveableFramebuffer buffer, boolean supersampling) {
         this.blitFlip(target, supersampling);
-
-        texture.startDownload(this.flipBuffer);
-        this.waiting.add(texture);
+        buffer.startDownload(this.flipBuffer);
+        this.waiting.addLast(buffer);
     }
 
-    public void startDepthDownload(RenderTarget target, SaveableFramebuffer texture) {
-        this.blitTransformDepth(target);
-
-        texture.startDownload(this.flipDepthBuffer);
-        this.waiting.add(texture);
+    public void startDepthDownload(RenderTarget target, SaveableFramebuffer buffer) {
+        TransformDepthUniform.Parameters parameters = this.transformDepth.getOrUpdate(ReplayUI.lastProjectionMatrix);
+        buffer.startDepthDownload(target, parameters);
+        this.waiting.addLast(buffer);
     }
 
     public @Nullable ImageFrame finishDownload() {
@@ -98,49 +64,38 @@ public class SaveableFramebufferQueue implements AutoCloseable {
         if (first == null) {
             return null;
         }
-
-        ImageFrame downloaded = first.finishDownload();
-
-        if (downloaded == null) {
+        ImageFrame image = first.finishDownload();
+        if (image == null) {
             return null;
         }
-
-        downloaded.audioBuffer = first.audioBuffer;
-
-        SaveableFramebuffer popped = this.waiting.removeFirst();
-        popped.audioBuffer = null;
-        this.available.add(popped);
-
-        return downloaded;
+        image.audioBuffer = first.audioBuffer;
+        SaveableFramebuffer recycled = this.waiting.removeFirst();
+        recycled.audioBuffer = null;
+        this.available.addLast(recycled);
+        return image;
     }
 
-
-    public @Nullable ImageFrame[] finishDownloadMultiple(int n) {
-        if (this.waiting.size() < n) {
+    public @Nullable ImageFrame[] finishDownloadMultiple(int count) {
+        if (count < 0 || this.waiting.size() < count) {
             return null;
         }
-
         var iterator = this.waiting.iterator();
-        for (int i = 0; i < n; i++) {
-            var saveableFramebuffer = iterator.next();
-            if (!saveableFramebuffer.canFinishDownload()) {
+        for (int i = 0; i < count; i++) {
+            if (!iterator.next().canFinishDownload()) {
                 return null;
             }
         }
 
-        ImageFrame[] downloads = new ImageFrame[n];
-        for (int i = 0; i < n; i++) {
+        ImageFrame[] result = new ImageFrame[count];
+        for (int i = 0; i < count; i++) {
             SaveableFramebuffer next = Objects.requireNonNull(this.waiting.removeFirst());
-            ImageFrame downloaded = Objects.requireNonNull(next.finishDownload());
-
-            downloaded.audioBuffer = next.audioBuffer;
-
-            downloads[i] = downloaded;
+            ImageFrame image = Objects.requireNonNull(next.finishDownload());
+            image.audioBuffer = next.audioBuffer;
             next.audioBuffer = null;
-            this.available.add(next);
+            result[i] = image;
+            this.available.addLast(next);
         }
-
-        return downloads;
+        return result;
     }
 
     public boolean isEmpty() {
@@ -153,17 +108,15 @@ public class SaveableFramebufferQueue implements AutoCloseable {
 
     @Override
     public void close() {
-        for (SaveableFramebuffer texture : this.waiting) {
-            texture.close();
+        for (SaveableFramebuffer buffer : this.waiting) {
+            buffer.close();
         }
-        for (SaveableFramebuffer texture : this.available) {
-            texture.close();
+        for (SaveableFramebuffer buffer : this.available) {
+            buffer.close();
         }
         this.waiting.clear();
         this.available.clear();
-        this.flipBuffer.close();
-        this.transformDepthUniform.close();
+        this.flipBuffer.destroyBuffers();
+        this.transformDepth.close();
     }
-
-
 }

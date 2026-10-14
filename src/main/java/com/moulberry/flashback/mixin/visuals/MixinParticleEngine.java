@@ -4,13 +4,12 @@ import com.moulberry.flashback.state.EditorState;
 import com.moulberry.flashback.state.EditorStateManager;
 import net.minecraft.client.particle.Particle;
 import net.minecraft.client.particle.ParticleEngine;
-import net.minecraft.core.BlockPos;
+import net.minecraft.client.Camera;
+import net.minecraft.client.renderer.LightTexture;
 import net.minecraft.core.particles.ParticleOptions;
 import net.minecraft.core.particles.ParticleType;
-import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.resources.Identifier;
-import net.minecraft.world.level.block.state.BlockState;
+import net.minecraft.resources.ResourceLocation;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
@@ -30,7 +29,7 @@ public class MixinParticleEngine {
             }
             if (!editorState.filteredParticles.isEmpty()) {
                 ParticleType<?> particleType = particleOptions.getType();
-                Identifier resourceLocation = BuiltInRegistries.PARTICLE_TYPE.getKey(particleType);
+                ResourceLocation resourceLocation = BuiltInRegistries.PARTICLE_TYPE.getKey(particleType);
                 if (resourceLocation != null && editorState.filteredParticles.contains(resourceLocation.toString())) {
                     cir.setReturnValue(null);
                 }
@@ -38,8 +37,9 @@ public class MixinParticleEngine {
         }
     }
 
-    @Inject(method = "extract", at = @At("HEAD"), cancellable = true)
-    public void extract(CallbackInfo ci) {
+    /** 1.21.1 renders particles directly; cancel that pass instead of the newer extraction stage. */
+    @Inject(method = "render(Lnet/minecraft/client/renderer/LightTexture;Lnet/minecraft/client/Camera;F)V", at = @At("HEAD"), cancellable = true)
+    public void render(LightTexture lightTexture, Camera camera, float partialTick, CallbackInfo ci) {
         EditorState editorState = EditorStateManager.getCurrent();
         if (editorState != null && !editorState.replayVisuals.renderParticles) {
             ci.cancel();
