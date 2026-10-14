@@ -489,6 +489,7 @@ public class Flashback implements ModInitializer, ClientModInitializer {
                     return 0;
                 })))));
             dispatcher.register(flashback);
+            com.moulberry.flashback.command.FlashbackDevCommands.register(dispatcher);
         });
 
         CommandRegistrationCallback.EVENT.register((dispatcher, registryAccess, environment) -> {
