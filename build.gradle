@@ -182,3 +182,17 @@ tasks.register("mergeShadowWithIncludes", Jar) {
     }
 }
 project.assemble.dependsOn(mergeShadowWithIncludes)
+
+// Writes the exact compile/runtime classpath so the headless suites in devtools/checks use the same
+// jars as the build (a blind scan of ~/.gradle mixes versions and signed fabric-api jars).
+tasks.register("writeCheckClasspath") {
+    def cp = sourceSets.main.compileClasspath
+    def out = layout.buildDirectory.file("check-classpath.txt")
+    inputs.files(cp)
+    outputs.file(out)
+    doLast {
+        def f = out.get().asFile
+        f.parentFile.mkdirs()
+        f.text = cp.files.findAll { it.name.endsWith('.jar') }.collect { it.absolutePath }.join(File.pathSeparator)
+    }
+}
