@@ -217,10 +217,12 @@ public class ExportJob {
                 resolutionY = this.getHeight();
             }
 
+            long exportStartNanos = System.nanoTime();
             try (VideoWriter encoder = createVideoWriter(this.settings, tempFileInfo);
                  SaveableFramebufferQueue downloader = new SaveableFramebufferQueue(resolutionX, resolutionY)) {
                 doExport(encoder, downloader);
             }
+            logTimingSummary(System.nanoTime() - exportStartNanos);
 
             Path outputLocation = this.settings.output();
             boolean errorMovingToOutput = false;
@@ -573,6 +575,15 @@ public class ExportJob {
             String progress = "Finalizing video (" + info + ")... " + time/1000 + "s";
             finishFrameFinal(Minecraft.getInstance().mainRenderTarget, progress, false);
         });
+    }
+
+    /** Where the time of a finished export went, so slow exports can be diagnosed and speed-ups measured. */
+    private void logTimingSummary(long totalNanos) {
+        int frames = Math.max(1, this.progressCount);
+        Flashback.LOGGER.info("Export timing: total {} ms for {} frames ({} ms/frame) - server ticks {} ms, client ticks {} ms, "
+                + "render {} ms, encode submit {} ms", totalNanos / 1_000_000, this.progressCount,
+            String.format("%.1f", totalNanos / 1_000_000.0 / frames), serverTickTimeNanos / 1_000_000,
+            clientTickTimeNanos / 1_000_000, renderTimeNanos / 1_000_000, encodeTimeNanos / 1_000_000);
     }
 
     public void tryDepthDownload() {

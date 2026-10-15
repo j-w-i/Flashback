@@ -77,3 +77,11 @@ remote-player hand state do not exist on 1.21.1; weather animation clock substit
 `LevelRenderer.ticks`) - weather needs a playtest, not source inspection; overlay uses `Screen.renderWithTooltip`.
 GUI capture cleanup: reflective hovered-slot search -> typed `AbstractContainerScreenAccessor`; removed `GuiPlayback.shouldShow()`
 (a pure alias of `enabled()`), duplicated/orphaned javadoc blocks. Container record -> replay playback re-verified in game.
+
+### Export performance baseline (instrumentation added, no render changes yet)
+`ExportJob` now logs `Export timing: total ... - server ticks, client ticks, render, encode submit` after every export.
+Baseline on Apple Silicon, 1080p60, h264_videotoolbox, flat/Beta test scenes (311 frames): 2.1-2.5 s total = 6.8-8.1 ms/frame
+(render ~0.45-0.48 s, server ticks ~0.07 s, client ticks ~0.1 s, encode submit ~0.12-0.13 s; the remainder is the fixed 60-frame
+warm-up and encoder finalisation). These scenes are too light to expose a render bottleneck, so no render-path changes were made on
+speculation. To optimise meaningfully, record a heavy scene (many chunks/entities/particles, 4K, SSAA) and compare this log line
+before/after any change.
