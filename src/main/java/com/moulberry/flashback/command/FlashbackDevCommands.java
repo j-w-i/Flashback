@@ -36,6 +36,10 @@ import java.util.Arrays;
  */
 public final class FlashbackDevCommands {
 
+    /** Test switches, set by {@code /flashback dev set audio|queue <bool>}. */
+    private static boolean devAudio = false;
+    private static boolean devQueueOnly = false;
+
     private FlashbackDevCommands() {
     }
 
@@ -152,6 +156,23 @@ public final class FlashbackDevCommands {
             }
             state.setCuts(null);
             return reply(ctx.getSource(), ok("tracks, cameras and cuts cleared"));
+        }));
+        dev.then(ClientCommandManager.literal("set")
+            .then(ClientCommandManager.argument("what", StringArgumentType.word())
+                .then(ClientCommandManager.argument("on", BoolArgumentType.bool()).executes(ctx -> {
+                    String what = StringArgumentType.getString(ctx, "what");
+                    boolean on = BoolArgumentType.getBool(ctx, "on");
+                    switch (what) {
+                        case "audio" -> devAudio = on;
+                        case "queue" -> devQueueOnly = on;
+                        case "quicksave" -> Flashback.getConfig().recordingControls.quicksave = on; // skip the Save Replay dialog
+                        default -> { return reply(ctx.getSource(), error("unknown switch " + what + " (audio, queue, quicksave)")); }
+                    }
+                    return reply(ctx.getSource(), ok(what + " = " + on));
+                }))));
+        dev.then(ClientCommandManager.literal("runqueue").executes(ctx -> {
+            com.moulberry.flashback.exporting.ExportJobQueue.drainingQueue = true;
+            return reply(ctx.getSource(), ok("draining queue of " + com.moulberry.flashback.exporting.ExportJobQueue.count()));
         }));
         dev.then(ClientCommandManager.literal("play").executes(ctx -> setPaused(ctx.getSource(), false)));
         dev.then(ClientCommandManager.literal("pause").executes(ctx -> setPaused(ctx.getSource(), true)));
@@ -286,7 +307,7 @@ public final class FlashbackDevCommands {
         if (encoders != null && export.selectedVideoEncoder != null && Arrays.asList(encoders).contains(export.selectedVideoEncoder)) {
             encoder = export.selectedVideoEncoder;
         }
-        AudioCodec audio = null;
+        AudioCodec audio = devAudio ? (export.audioCodec == null ? AudioCodec.AAC : export.audioCodec) : null;
 
         Path output = Path.of(outputStr);
         if (!output.isAbsolute()) {
@@ -310,9 +331,15 @@ public final class FlashbackDevCommands {
             export.useMaximumBitrate || !codec.usesBitrate() ? 0 : 20_000_000,
             codec.hasProResProfile() ? export.proResProfile : null,
             false, export.ssaa, noGui,
-            export.stereoAudio, audio,
+            true, audio,
             output, export.container.isImageSequence() ? "%04d" : null);
 
+        if (devQueueOnly) {
+            com.moulberry.flashback.exporting.ExportJobQueue.queuedJobs.add(settings);
+            JsonObject q = ok("queued");
+            q.addProperty("queueSize", com.moulberry.flashback.exporting.ExportJobQueue.count());
+            return reply(source, q);
+        }
         Flashback.EXPORT_JOB = new ExportJob(settings);
         JsonObject o = ok("export started");
         o.addProperty("output", output.toString());
@@ -345,6 +372,8 @@ public final class FlashbackDevCommands {
             o.addProperty("exportProgress", job.progressCount);
             o.addProperty("exportOutOf", job.progressOutOf);
         }
+        o.addProperty("queued", com.moulberry.flashback.exporting.ExportJobQueue.count());
+        o.addProperty("draining", com.moulberry.flashback.exporting.ExportJobQueue.drainingQueue);
         if (mc.player != null) {
             o.addProperty("x", mc.player.getX());
             o.addProperty("y", mc.player.getY());

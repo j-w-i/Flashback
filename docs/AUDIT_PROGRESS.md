@@ -108,3 +108,10 @@ Fix: `renderTarget.bindWrite(true)` before `gameRenderer.render` in `ExportJob.r
 Verified: 0 dark frames of 738 (mp4, mkv, mov, webm, avi) and 0 of 1230 (gif), vs 21 % / 49 % / 36 % (mp4/webm/mkv) before.
 Containers all produce valid files: mp4 mkv mov webm avi gif webp + PNG sequence (via `/flashback dev exportas`).
 Earlier export checks in this file measured length/HUD, so they were unaffected, but any export made before this commit has flicker.
+
+### Export queue and audio verified
+- Queue: three jobs queued with `/flashback dev set queue true` + `exportas`, drained with `/flashback dev runqueue`; all three finished in
+  order, 768 frames each, 0 dark frames. (The queue window UI itself still needs a real-click pass.)
+- Audio: recorded a replay with four `playsound` note-block hits (recording saved without the dialog via `set quicksave true`),
+  exported with audio on: AAC, 48 kHz stereo, 7.2 s = video length, bursts in the envelope where the notes play.
+- Dev switches: `/flashback dev set audio|queue|quicksave <bool>`, `runqueue`. Dev export uses 20 Mbps (not unlimited) unless configured.
