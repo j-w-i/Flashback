@@ -4,7 +4,11 @@ import com.moulberry.flashback.Flashback;
 import com.moulberry.flashback.configuration.FlashbackConfigV1;
 import com.moulberry.flashback.exporting.ExportJobQueue;
 import com.moulberry.flashback.screen.select_replay.SelectReplayScreen;
+import com.moulberry.flashback.gui.GuiDisplay;
+import com.moulberry.flashback.keyframe.handler.MinecraftKeyframeHandler;
+import com.moulberry.flashback.playback.ReplayServer;
 import imgui.moulberry90.ImGui;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.screens.TitleScreen;
 import net.minecraft.client.resources.language.I18n;
@@ -18,6 +22,29 @@ public class MainMenuBar {
         if (ImGui.beginMainMenuBar()) {
             renderInner();
             ImGui.endMainMenuBar();
+        }
+    }
+
+    /**
+     * One-click switch between watching through the recorded player's eyes and the free camera.
+     *
+     * <p>Seeing what the player saw - their hotbar, health and held item - used to need a spectate camera, a
+     * keyframe naming the player, and a cut to it. For a quick look that is a lot of steps, so this does it
+     * directly. It is a preview of the viewpoint, not an edit: the timeline is untouched.
+     */
+    private static void renderQuickView() {
+        ReplayServer replayServer = Flashback.getReplayServer();
+        Player recorded = replayServer == null ? null : replayServer.recordedPlayer();
+        boolean through = GuiDisplay.showingThroughAPlayer();
+
+        if (recorded == null) {
+            ImGui.beginDisabled();
+            ImGui.menuItem("Watch as recorded player##QuickViewPlayer");
+            ImGui.endDisabled();
+            return;
+        }
+        if (ImGui.menuItem(through ? "Back to free camera##QuickViewFree" : "Watch as recorded player##QuickViewPlayer")) {
+            new MinecraftKeyframeHandler(Minecraft.getInstance()).applySpectate(through ? null : recorded.getUUID());
         }
     }
 
@@ -80,6 +107,10 @@ public class MainMenuBar {
         if (ImGui.menuItem(I18n.get("flashback.preferences") + "##Preferences")) {
             PreferencesWindow.open();
         }
+
+        ImGui.separator();
+
+        renderQuickView();
 
         ImGui.separator();
 
