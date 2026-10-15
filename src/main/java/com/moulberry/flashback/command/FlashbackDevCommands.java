@@ -92,6 +92,26 @@ public final class FlashbackDevCommands {
             new com.moulberry.flashback.keyframe.handler.MinecraftKeyframeHandler(Minecraft.getInstance()).applySpectate(null);
             return reply(ctx.getSource(), ok("stopped spectating"));
         }));
+        dev.then(ClientCommandManager.literal("armor").then(ClientCommandManager.argument("material", StringArgumentType.word()).executes(ctx -> {
+            // Equips a full armour set on the singleplayer player, so HUD layouts that depend on armour can be tested.
+            Minecraft mc = Minecraft.getInstance();
+            var server = mc.getSingleplayerServer();
+            if (server == null || mc.player == null) return reply(ctx.getSource(), error("needs a singleplayer world"));
+            String material = StringArgumentType.getString(ctx, "material");
+            server.execute(() -> {
+                var player = server.getPlayerList().getPlayer(mc.player.getUUID());
+                if (player == null) return;
+                String[] slots = {"helmet", "chestplate", "leggings", "boots"};
+                net.minecraft.world.entity.EquipmentSlot[] equip = {net.minecraft.world.entity.EquipmentSlot.HEAD,
+                    net.minecraft.world.entity.EquipmentSlot.CHEST, net.minecraft.world.entity.EquipmentSlot.LEGS,
+                    net.minecraft.world.entity.EquipmentSlot.FEET};
+                for (int i = 0; i < 4; i++) {
+                    var id = net.minecraft.resources.ResourceLocation.withDefaultNamespace(material + "_" + slots[i]);
+                    player.setItemSlot(equip[i], new net.minecraft.world.item.ItemStack(net.minecraft.core.registries.BuiltInRegistries.ITEM.get(id)));
+                }
+            });
+            return reply(ctx.getSource(), ok("equipped " + material));
+        })));
         dev.then(ClientCommandManager.literal("play").executes(ctx -> setPaused(ctx.getSource(), false)));
         dev.then(ClientCommandManager.literal("pause").executes(ctx -> setPaused(ctx.getSource(), true)));
         dev.then(ClientCommandManager.literal("export")

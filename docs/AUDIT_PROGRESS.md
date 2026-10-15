@@ -32,3 +32,36 @@ Branch `port/minecraft-1.21.1`. Environment: macOS arm64, JDK 25 runs the build 
   PNG/EXR/ProRes containers, export queue, container-GUI recording, weather rendering, `devtools/checks` suites.
 - Test artifact, not a bug: `control.setInput {}` leaves keys held; the viewer flew ~1800 blocks until released explicitly.
 - The only local world was 1.21.11; the test world `run/saves/FlashbackTest` was generated with the vanilla 1.21.1 server jar.
+
+
+## Session 2 - Version Emulator integration (REQUIRED goal item) and replay fixes
+
+Emulator = `j-w-i/minecraft-version-emulator` (cloned to `~/minecraft-version-emulator`, Fabric 1.21.1, mod id `hex1211`).
+It gates the HUD via `HudHelper.hideHungerBar()/hideExperienceBar()` which read the global `HistoricalActiveSession`, set by its
+server join hook. Local build needs the JDK-21 toolchain pin dropped (uncommitted local edit; JDK 25 + release 21).
+Test world: `run/saves/EraBeta` (Beta 1.7.3, `level-type=historical_experience:beta_1_7_3`); mods `historical-experience` +
+`moderner-beta 5.0.0-alpha.4` in `run/mods` (git-ignored).
+
+### Problem found
+Replays are played by Flashback's own `ReplayServer`, so the emulator's join hook never established the era: **a replay of a Beta
+1.7.3 world opened from a modern world drew the modern HUD** (hunger + XP), and exports baked that in.
+
+### Fix
+- `FlashbackMeta.integrationState` (new `integrationState` JSON object) stores per-recording state of other mods;
+  `compat/ModIntegrations` captures the emulator's version at record time (reflection only - no compile/runtime dependency) and
+  re-applies it every client tick for the whole replay (`applyForReplay`), clearing it on exit (`clearAfterReplay`).
+- Flashback's `MixinHud.isExperienceBarVisible` overrode the emulator's own XP gate (it forces survival -> visible), so it now also
+  asks `HudHelper.hideExperienceBar()`.
+- Verified: record Beta 1.7.3 world (with and without iron armour) -> reopen from a *modern* world -> spectate: hearts only, no
+  hunger, no XP bar, armour relocated to the right of the hearts exactly as in the live game; MP4 export of the same shows the same
+  HUD (frame inspected with ffmpeg). Old recordings without `integrationState` keep modern HUD (no era is recorded in them).
+
+### Other fixes this session
+- Vanilla tutorial toast ("Move with WASD") leaked into replay playback and exported frames: `MixinToastManager` drops
+  `TutorialToast` while a replay is open.
+- Free camera started exactly at the recorded player's position (inside their head): now starts 3.5 blocks behind / 1 above.
+- Dev commands added: `spectate`, `unspectate`, `armor <material>`; `status` now reports camera entity and the emulator era.
+
+### Still to do
+Other eras (Alpha/Infdev/Release 1.8.x), relocated elements for other versions, hunger-less eras on multiplayer/LAN, cuts, orbit
+camera, undo/redo, audio, other containers, export queue, creator-facing UI polish, GUI capture cleanup, render optimisation.
