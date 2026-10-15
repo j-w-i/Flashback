@@ -115,3 +115,9 @@ Earlier export checks in this file measured length/HUD, so they were unaffected,
 - Audio: recorded a replay with four `playsound` note-block hits (recording saved without the dialog via `set quicksave true`),
   exported with audio on: AAC, 48 kHz stereo, 7.2 s = video length, bursts in the envelope where the notes play.
 - Dev switches: `/flashback dev set audio|queue|quicksave <bool>`, `runqueue`. Dev export uses 20 Mbps (not unlimited) unless configured.
+
+### Orbit camera verified (`/flashback dev orbit <fromYaw> <toYaw>`)
+Orbit camera around the recorded player, yaw 0 -> 360 over the clip, cut to at tick 0. Live playback pose: yaw 1.9 / 77.4 / 218.5 / 335.6 at
+ticks 17 / 111 / 212 / 311, position circling the player at radius ~4. 1107-frame 1080p export shows the player from the front, side and
+back, 0 dark frames. Note: a paused `seek` alone does not re-evaluate camera keyframes (the reading stayed at the last value until playback
+stepped a tick) - worth a look as a UI nicety: scrubbing while paused should update the camera.

@@ -174,6 +174,17 @@ public final class FlashbackDevCommands {
             com.moulberry.flashback.exporting.ExportJobQueue.drainingQueue = true;
             return reply(ctx.getSource(), ok("draining queue of " + com.moulberry.flashback.exporting.ExportJobQueue.count()));
         }));
+        dev.then(ClientCommandManager.literal("orbit")
+            .then(ClientCommandManager.argument("fromYaw", IntegerArgumentType.integer(-360, 720))
+                .then(ClientCommandManager.argument("toYaw", IntegerArgumentType.integer(-360, 720)).executes(ctx -> {
+                    try {
+                        return addOrbitCamera(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "fromYaw"),
+                            IntegerArgumentType.getInteger(ctx, "toYaw"));
+                    } catch (Throwable t) {
+                        Flashback.LOGGER.error("dev orbit failed", t);
+                        return reply(ctx.getSource(), error(String.valueOf(t)));
+                    }
+                }))));
         dev.then(ClientCommandManager.literal("play").executes(ctx -> setPaused(ctx.getSource(), false)));
         dev.then(ClientCommandManager.literal("pause").executes(ctx -> setPaused(ctx.getSource(), true)));
         dev.then(ClientCommandManager.literal("export")
@@ -264,6 +275,37 @@ public final class FlashbackDevCommands {
         }
         state.markDirty();
         return reply(source, ok("added " + kind + " keyframe at " + tick));
+    }
+
+    /** Adds an orbit camera circling the recorded player (yaw sweeps fromYaw -> toYaw over the clip) and cuts to it at tick 0. */
+    private static int addOrbitCamera(FabricClientCommandSource source, int fromYaw, int toYaw) {
+        EditorState state = EditorStateManager.getCurrent();
+        ReplayServer server = Flashback.getReplayServer();
+        if (state == null || server == null) return reply(source, error("not in a replay editor"));
+        net.minecraft.world.entity.player.Player recorded = server.recordedPlayer();
+        if (recorded == null) return reply(source, error("recorded player not present at this tick (seek into the clip first)"));
+        var centre = new org.joml.Vector3d(recorded.getX(), recorded.getY() + 1.0, recorded.getZ());
+        int last = Math.max(2, server.getTotalReplayTicks() - 1);
+
+        var camera = new com.moulberry.flashback.state.EditorCamera("Orbit test", com.moulberry.flashback.state.EditorCamera.Kind.ORBIT);
+        var orbitType = com.moulberry.flashback.keyframe.types.CameraOrbitKeyframeType.INSTANCE;
+        var track = new com.moulberry.flashback.state.KeyframeTrack(orbitType);
+        track.cameraId = camera.id;
+        track.keyframesByTick.put(0, new com.moulberry.flashback.keyframe.impl.CameraOrbitKeyframe(new org.joml.Vector3d(centre), 4.0f, fromYaw, 15f));
+        track.keyframesByTick.put(last, new com.moulberry.flashback.keyframe.impl.CameraOrbitKeyframe(new org.joml.Vector3d(centre), 4.0f, toYaw, 15f));
+
+        long stamp = state.acquireWrite();
+        try {
+            var scene = state.getCurrentScene(stamp);
+            scene.cameras.add(camera);
+            scene.keyframeTracks.add(track);
+            var switchTrack = scene.findOrCreateCameraSwitchTrack();
+            switchTrack.keyframesByTick.put(0, new com.moulberry.flashback.keyframe.impl.CameraSwitchKeyframe(camera.id));
+        } finally {
+            state.release(stamp);
+        }
+        state.markDirty();
+        return reply(source, ok("orbit camera added, yaw " + fromYaw + " -> " + toYaw + " over " + last + " ticks"));
     }
 
     private static int setPaused(FabricClientCommandSource source, boolean paused) {
