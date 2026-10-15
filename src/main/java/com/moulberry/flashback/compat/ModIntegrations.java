@@ -71,6 +71,37 @@ public final class ModIntegrations {
         writeEmulatorVersion(null);
     }
 
+    private static final String EMULATOR_HUD_CLASS = "net.historicalexperience.client.hud.HudHelper";
+    @Nullable
+    private static Method emulatorHideExperience;
+    private static boolean emulatorHudLookedUp;
+
+    /**
+     * Whether the Version Emulator says the active era has no experience bar. Flashback decides bar visibility from
+     * the watched player's game mode, which runs before (and would override) the emulator's own gate, so the
+     * question has to be put to it directly or eras without XP would grow an empty bar in replays and exports.
+     */
+    public static boolean emulatorHidesExperienceBar() {
+        if (!emulatorHudLookedUp) {
+            emulatorHudLookedUp = true;
+            if (FabricLoader.getInstance().isModLoaded(EMULATOR_MOD_ID)) {
+                try {
+                    emulatorHideExperience = Class.forName(EMULATOR_HUD_CLASS).getMethod("hideExperienceBar");
+                } catch (Throwable t) {
+                    Flashback.LOGGER.warn("Version emulator HUD gate not found", t);
+                }
+            }
+        }
+        if (emulatorHideExperience == null) {
+            return false;
+        }
+        try {
+            return (Boolean) emulatorHideExperience.invoke(null);
+        } catch (Throwable t) {
+            return false;
+        }
+    }
+
     @Nullable
     public static String readEmulatorVersion() {
         if (!FabricLoader.getInstance().isModLoaded(EMULATOR_MOD_ID)) {

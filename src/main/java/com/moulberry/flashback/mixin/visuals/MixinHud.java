@@ -162,7 +162,8 @@ public abstract class MixinHud {
     @Inject(method = "isExperienceBarVisible", at = @At("HEAD"), cancellable = true, require = 0)
     public void isExperienceBarVisible(CallbackInfoReturnable<Boolean> cir) {
         if (this.cameraGameType != null) {
-            cir.setReturnValue(this.cameraGameType.isSurvival());
+            // Eras with no experience (Version Emulator) must not get a bar just because the watched player is in survival
+            cir.setReturnValue(this.cameraGameType.isSurvival() && !com.moulberry.flashback.compat.ModIntegrations.emulatorHidesExperienceBar());
         }
     }
 
