@@ -9,6 +9,7 @@
     "MixinLevelRenderer",
     "gui.AbstractContainerScreenAccessor",
     "gui.MixinAbstractContainerScreen",
+    "gui.MixinInventoryScreenPreview",
     "gui.MixinMinecraftGuiRecorder",
     "gui.MixinScreenGuiRecorder",
     "MixinMinecraft",

@@ -201,6 +201,6 @@ Test-tool lesson: the screenshot size from `vision.screenshot` varies (1708x960 
   showed on replayed screens. `ModIntegrations.writeEmulatorVersion` now calls `HistoricalClientRules.applySyncedVersion/clearSyncedVersion` (falls back to the
   session setter on older emulator builds). After it: replay log shows `Historical textures active: stack=...golden_days_base`, no recipe button.
 - Beta crafting table and chest replay with the Beta panel style; the survival inventory replays too (armour, hotbar, bread visible).
-- OPEN: in replay the survival inventory's character preview is a black box (live shows the armoured player model).
+- FIXED: the replay survival inventory's character preview was a black box; new `MixinInventoryScreenPreview` draws the recorded player there (armoured model verified in replay). All `devtools/checks` suites still pass.
 - Hotbar toggle (`recordHotbar`) vs GUI recording: independent data paths (see below); two scripted sessions (selection/give/clear/drop, and inventory-menu moves)
   replayed with a HUD hotbar identical to the live one.
