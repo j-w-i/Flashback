@@ -24,6 +24,7 @@ public final class ModIntegrations {
     /** The Minecraft Version Emulator: its active historical version drives HUD layout and rules. */
     public static final String VERSION_EMULATOR = "version_emulator";
     private static final String EMULATOR_MOD_ID = "hex1211";
+    private static final String EMULATOR_RULES_CLASS = "net.historicalexperience.client.HistoricalClientRules";
     private static final String EMULATOR_SESSION_CLASS = "net.historicalexperience.gameplay.HistoricalActiveSession";
 
     @Nullable
@@ -117,13 +118,30 @@ public final class ModIntegrations {
 
     private static boolean writeEmulatorVersion(@Nullable String version) {
         try {
-            Class<?> session = Class.forName(EMULATOR_SESSION_CLASS);
+            // The emulator's own "server pushed a version" entry points. They set the session value too, but also the
+            // client-side answer that the HUD, the texture stack and the screens ask. A replay has no historical world
+            // to answer from, so setting only the session left the textures and the recipe-book gate on "unknown".
+            Class<?> rules = Class.forName(EMULATOR_RULES_CLASS);
             if (version == null) {
-                session.getMethod("clear").invoke(null);
+                rules.getMethod("clearSyncedVersion").invoke(null);
             } else {
-                session.getMethod("set", String.class).invoke(null, version);
+                rules.getMethod("applySyncedVersion", String.class).invoke(null, version);
             }
             return true;
+        } catch (ClassNotFoundException | NoSuchMethodException old) {
+            // An emulator build from before those existed: the session value is all there is.
+            try {
+                Class<?> session = Class.forName(EMULATOR_SESSION_CLASS);
+                if (version == null) {
+                    session.getMethod("clear").invoke(null);
+                } else {
+                    session.getMethod("set", String.class).invoke(null, version);
+                }
+                return true;
+            } catch (Throwable t) {
+                Flashback.LOGGER.warn("Could not update version-emulator session", t);
+                return false;
+            }
         } catch (Throwable t) {
             Flashback.LOGGER.warn("Could not update version-emulator session", t);
             return false;

@@ -193,3 +193,14 @@ Played back through the recorded player (spectate): the Crafting and Furnace scr
 - seeking into the middle of either container's life (700 -> 1000, 3300 -> 1000, 700 -> 2700) lands with the right container open and its contents intact.
 Not covered: chest with items being moved, villager trade, enchanting/anvil/brewing, hopper/dispenser layouts, and Beta containers whose layout differs from modern.
 Test-tool lesson: the screenshot size from `vision.screenshot` varies (1708x960 vs 732x412), so a pixel-colour panel detector gave false negatives; trust `container.state`.
+
+### Emulator update (8b0f30a) installed; replay now gets era textures and GUI rules; Mod Menu 11.0.5 installed
+- `run/mods` now has the freshly built emulator jar and Mod Menu 11.0.5 (the version the emulator pins). Texture auto-download works live: pinned packs fetched from
+  Modrinth, stack `vanilla+programmer_art+continuation+golden_days_base` applied in a Beta 1.7.3 world.
+- BUG FIXED: a replay applied only the emulator's session value, so the texture plan resolved to "none" (`-> colormaps:none`) and the recipe-book button
+  showed on replayed screens. `ModIntegrations.writeEmulatorVersion` now calls `HistoricalClientRules.applySyncedVersion/clearSyncedVersion` (falls back to the
+  session setter on older emulator builds). After it: replay log shows `Historical textures active: stack=...golden_days_base`, no recipe button.
+- Beta crafting table and chest replay with the Beta panel style; the survival inventory replays too (armour, hotbar, bread visible).
+- OPEN: in replay the survival inventory's character preview is a black box (live shows the armoured player model).
+- Hotbar toggle (`recordHotbar`) vs GUI recording: independent data paths (see below); two scripted sessions (selection/give/clear/drop, and inventory-menu moves)
+  replayed with a HUD hotbar identical to the live one.
