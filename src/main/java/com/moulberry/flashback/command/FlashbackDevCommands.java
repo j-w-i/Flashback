@@ -436,6 +436,17 @@ public final class FlashbackDevCommands {
         if (server != null) {
             o.addProperty("replayTick", server.getReplayTick());
             if (EditorStateManager.getCurrent() != null) {
+                EditorState st = EditorStateManager.getCurrent();
+                long stamp = st.acquireRead();
+                try {
+                    int n = 0;
+                    for (var track : st.getCurrentScene(stamp).keyframeTracks) n += track.keyframesByTick.size();
+                    o.addProperty("keyframes", n);
+                } finally {
+                    st.release(stamp);
+                }
+            }
+            if (EditorStateManager.getCurrent() != null) {
                 o.addProperty("cuts", EditorStateManager.getCurrent().normalisedCuts().size());
             }
             o.addProperty("totalTicks", server.getTotalReplayTicks());

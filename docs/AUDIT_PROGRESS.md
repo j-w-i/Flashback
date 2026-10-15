@@ -137,3 +137,10 @@ Recorded 1799 ticks (~90 s) in `EraBeta` including opening a chest: metadata `ve
 modern world and scanned 12 points across the clip: the Chest + Inventory screen is drawn at tick ~1150 (and the chest block is visible
 before/after), and the Beta HUD (hearts only, armour relocated) stays correct throughout. Not covered: clicking items inside the chest,
 furnaces/crafting tables, or Beta containers whose layout differs from the modern screens.
+
+### Real-UI verification (screen unlocked again)
+- "Watch as recorded player" / "Back to free camera" menu toggle: clicked both directions in the live editor; camera entity and the HUD gating
+  (`showingThroughPlayer`) flip each time, label updates.
+- Undo/redo: three camera keyframes inserted through the timeline UI; Cmd+Z removed one per press (4 -> 3 -> 2 keyframes counting the
+  camera-switch key), Cmd+Y restored one. On macOS the app's "Ctrl" bindings are Command (by design, `replaceCtrlWithCommand`). Plain `P` (pause) works.
+- Tool lesson: GLFW ignores modifier flags on synthetic key events; hold the real modifier (`devtools/mac/input chord`).

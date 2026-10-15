@@ -8,3 +8,5 @@
   `/flashback dev status | open <zip> | exit | seek <tick> | play | pause | export <noGui> <output>`.
   Each writes JSON to `run/flashback_dev_status.json` and logs `[dev] ...`.
 - `control.setInput` is sticky: always send explicit `false` for keys you pressed (`{}` does not release them).
+
+- `input chord <modifierKeyCode> <keyCode>` holds a real modifier key around a key press (macOS key codes: Cmd 55, Shift 56, Ctrl 59, Opt 58; Z=6, Y=16, P=35). Modifier *flags* on a plain `key` event are ignored by GLFW, so shortcuts like undo (Cmd+Z) only work through `chord`.

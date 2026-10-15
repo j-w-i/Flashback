@@ -30,5 +30,13 @@ case "key":
   d?.post(tap: .cghidEventTap); usleep(50000); u?.post(tap: .cghidEventTap)
 case "type":
   for ch in a[2].utf16 { var c = ch; let d = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: true); d?.keyboardSetUnicodeString(stringLength: 1, unicodeString: &c); d?.post(tap: .cghidEventTap); let u = CGEvent(keyboardEventSource: nil, virtualKey: 0, keyDown: false); u?.keyboardSetUnicodeString(stringLength: 1, unicodeString: &c); u?.post(tap: .cghidEventTap); usleep(40000) }
+case "chord":
+  // chord <modifierKeyCode> <keyCode>: holds a real modifier key down around the key press (flags alone are ignored by GLFW)
+  let m = CGKeyCode(UInt16(a[2])!), k = CGKeyCode(UInt16(a[3])!)
+  let flag: CGEventFlags = (m == 55 || m == 54) ? .maskCommand : (m == 59 ? .maskControl : (m == 56 ? .maskShift : .maskAlternate))
+  let md = CGEvent(keyboardEventSource: nil, virtualKey: m, keyDown: true); md?.flags = flag; md?.post(tap: .cghidEventTap); usleep(120000)
+  let kd = CGEvent(keyboardEventSource: nil, virtualKey: k, keyDown: true); kd?.flags = flag; kd?.post(tap: .cghidEventTap); usleep(80000)
+  let ku = CGEvent(keyboardEventSource: nil, virtualKey: k, keyDown: false); ku?.flags = flag; ku?.post(tap: .cghidEventTap); usleep(80000)
+  let mu = CGEvent(keyboardEventSource: nil, virtualKey: m, keyDown: false); mu?.post(tap: .cghidEventTap)
 default: break
 }
