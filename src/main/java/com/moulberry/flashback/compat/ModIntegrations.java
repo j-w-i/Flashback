@@ -1,0 +1,101 @@
+package com.moulberry.flashback.compat;
+
+import com.moulberry.flashback.Flashback;
+import net.fabricmc.loader.api.FabricLoader;
+import net.minecraft.client.Minecraft;
+import org.jetbrains.annotations.Nullable;
+
+import java.lang.reflect.Method;
+import java.util.LinkedHashMap;
+
+/**
+ * Carries per-recording state belonging to other mods through a replay.
+ *
+ * <p>A replay is played by Flashback's own replay server, not by the server the recording was made on, so any
+ * mod whose client behaviour depends on server-side facts (which world type, which ruleset) cannot work them
+ * out again during playback or export. The recording therefore stores a small string per integration and
+ * playback hands it back to that mod.
+ *
+ * <p>Integrations are reached reflectively and only when the mod is present, so Flashback keeps no compile or
+ * runtime dependency on any of them, and a replay recorded with an integration still opens without it.
+ */
+public final class ModIntegrations {
+
+    /** The Minecraft Version Emulator: its active historical version drives HUD layout and rules. */
+    public static final String VERSION_EMULATOR = "version_emulator";
+    private static final String EMULATOR_MOD_ID = "hex1211";
+    private static final String EMULATOR_SESSION_CLASS = "net.historicalexperience.gameplay.HistoricalActiveSession";
+
+    @Nullable
+    private static String appliedEmulatorVersion;
+
+    private ModIntegrations() {
+    }
+
+    /** Collects the state to store in a new recording's metadata. */
+    public static LinkedHashMap<String, String> capture() {
+        LinkedHashMap<String, String> state = new LinkedHashMap<>();
+        String emulator = readEmulatorVersion();
+        if (emulator != null) {
+            state.put(VERSION_EMULATOR, emulator);
+        }
+        return state;
+    }
+
+    /**
+     * Makes this client present a replay the way it was recorded. Idempotent and cheap, so it can run every
+     * tick: the emulator's own server join hook also writes its session value while the replay world loads, and
+     * that write has to be overridden afterwards.
+     */
+    public static void applyForReplay(@Nullable java.util.Map<String, String> state) {
+        String wanted = state == null ? null : state.get(VERSION_EMULATOR);
+        if (wanted == null || !FabricLoader.getInstance().isModLoaded(EMULATOR_MOD_ID)) {
+            return;
+        }
+        if (wanted.equals(readEmulatorVersion())) {
+            appliedEmulatorVersion = wanted;
+            return;
+        }
+        if (writeEmulatorVersion(wanted)) {
+            appliedEmulatorVersion = wanted;
+            Flashback.LOGGER.info("Applied recorded version-emulator version {} to replay playback", wanted);
+        }
+    }
+
+    /** Undoes {@link #applyForReplay} when the replay is closed, so an ordinary world is not left in that era. */
+    public static void clearAfterReplay() {
+        if (appliedEmulatorVersion == null) {
+            return;
+        }
+        appliedEmulatorVersion = null;
+        writeEmulatorVersion(null);
+    }
+
+    @Nullable
+    public static String readEmulatorVersion() {
+        if (!FabricLoader.getInstance().isModLoaded(EMULATOR_MOD_ID)) {
+            return null;
+        }
+        try {
+            Method current = Class.forName(EMULATOR_SESSION_CLASS).getMethod("current");
+            return (String) current.invoke(null);
+        } catch (Throwable t) {
+            return null;
+        }
+    }
+
+    private static boolean writeEmulatorVersion(@Nullable String version) {
+        try {
+            Class<?> session = Class.forName(EMULATOR_SESSION_CLASS);
+            if (version == null) {
+                session.getMethod("clear").invoke(null);
+            } else {
+                session.getMethod("set", String.class).invoke(null, version);
+            }
+            return true;
+        } catch (Throwable t) {
+            Flashback.LOGGER.warn("Could not update version-emulator session", t);
+            return false;
+        }
+    }
+}

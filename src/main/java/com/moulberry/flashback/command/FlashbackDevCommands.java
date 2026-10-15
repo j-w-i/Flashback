@@ -78,6 +78,20 @@ public final class FlashbackDevCommands {
                 server.goToReplayTick(IntegerArgumentType.getInteger(ctx, "tick"));
                 return reply(ctx.getSource(), ok("seeking"));
             })));
+        dev.then(ClientCommandManager.literal("spectate").executes(ctx -> {
+            ReplayServer server = Flashback.getReplayServer();
+            if (server == null) return reply(ctx.getSource(), error("not in a replay"));
+            net.minecraft.world.entity.player.Player recorded = server.recordedPlayer();
+            if (recorded == null) return reply(ctx.getSource(), error("recorded player not present at this tick"));
+            new com.moulberry.flashback.keyframe.handler.MinecraftKeyframeHandler(Minecraft.getInstance()).applySpectate(recorded.getUUID());
+            return reply(ctx.getSource(), ok("spectating " + recorded.getName().getString()));
+        }));
+        dev.then(ClientCommandManager.literal("unspectate").executes(ctx -> {
+            ReplayServer server = Flashback.getReplayServer();
+            if (server == null) return reply(ctx.getSource(), error("not in a replay"));
+            new com.moulberry.flashback.keyframe.handler.MinecraftKeyframeHandler(Minecraft.getInstance()).applySpectate(null);
+            return reply(ctx.getSource(), ok("stopped spectating"));
+        }));
         dev.then(ClientCommandManager.literal("play").executes(ctx -> setPaused(ctx.getSource(), false)));
         dev.then(ClientCommandManager.literal("pause").executes(ctx -> setPaused(ctx.getSource(), true)));
         dev.then(ClientCommandManager.literal("export")
@@ -199,6 +213,12 @@ public final class FlashbackDevCommands {
             o.addProperty("pitch", mc.player.getXRot());
         }
         o.addProperty("recording", Flashback.RECORDER != null);
+        if (mc.getCameraEntity() != null) {
+            o.addProperty("cameraEntity", mc.getCameraEntity().getName().getString());
+            o.addProperty("cameraIsViewer", mc.getCameraEntity() == mc.player);
+        }
+        o.addProperty("showingThroughPlayer", com.moulberry.flashback.gui.GuiDisplay.showingThroughAPlayer());
+        o.addProperty("historicalVersion", com.moulberry.flashback.compat.ModIntegrations.readEmulatorVersion());
         return o;
     }
 

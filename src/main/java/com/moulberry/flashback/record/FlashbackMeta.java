@@ -31,6 +31,12 @@ public class FlashbackMeta {
 
     public LinkedHashMap<String, LinkedHashSet<String>> namespacesForRegistries = null;
     public LinkedHashMap<String, String> modVersions = null;
+    /**
+     * State that other mods need back to present the replay the way it was recorded, keyed by integration id
+     * (see {@code ModIntegrations}). For example the Minecraft Version Emulator's historical version id, which
+     * decides which HUD elements exist and where they sit.
+     */
+    public LinkedHashMap<String, String> integrationState = null;
 
     public Map<String, File> distantHorizonPaths = new HashMap<>();
 
@@ -102,6 +108,14 @@ public class FlashbackMeta {
             }
 
             meta.add("modVersions", modVersionsObj);
+        }
+
+        if (this.integrationState != null && !this.integrationState.isEmpty()) {
+            JsonObject integrationObj = new JsonObject();
+            for (Map.Entry<String, String> entry : this.integrationState.entrySet()) {
+                integrationObj.addProperty(entry.getKey(), entry.getValue());
+            }
+            meta.add("integrationState", integrationObj);
         }
 
         JsonObject chunksJson = new JsonObject();
@@ -197,6 +211,13 @@ public class FlashbackMeta {
             }
 
             meta.add("modVersions", modVersionsObj);
+        }
+
+        if (meta.has("integrationState")) {
+            flashbackMeta.integrationState = new LinkedHashMap<>();
+            for (Map.Entry<String, JsonElement> entry : meta.getAsJsonObject("integrationState").entrySet()) {
+                flashbackMeta.integrationState.put(entry.getKey(), entry.getValue().getAsString());
+            }
         }
 
         // Chunks

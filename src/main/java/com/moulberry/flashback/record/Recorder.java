@@ -177,6 +177,7 @@ public class Recorder {
 
         this.metadata.namespacesForRegistries = RegistryMetaHelper.calculateNamespacesForRegistries();
         this.metadata.modVersions = ModListHelper.calculateModList();
+        this.metadata.integrationState = com.moulberry.flashback.compat.ModIntegrations.capture();
 
         String worldName = null;
         ServerData serverData = Minecraft.getInstance().getCurrentServer();

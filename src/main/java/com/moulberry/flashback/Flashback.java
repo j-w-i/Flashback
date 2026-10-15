@@ -557,7 +557,16 @@ public class Flashback implements ModInitializer, ClientModInitializer {
         AtomicBoolean synchronizeTickingCanTickServer = new AtomicBoolean(true);
 
         ClientTickEvents.END_CLIENT_TICK.register(minecraft -> {
+            boolean wasInReplayForIntegrations = isInReplay;
             updateIsInReplay();
+
+            // Other mods' recorded state (e.g. the Version Emulator's era) is put back for the whole replay
+            ReplayServer integrationReplayServer = getReplayServer();
+            if (integrationReplayServer != null) {
+                com.moulberry.flashback.compat.ModIntegrations.applyForReplay(integrationReplayServer.getMetadata().integrationState);
+            } else if (wasInReplayForIntegrations && !isInReplay) {
+                com.moulberry.flashback.compat.ModIntegrations.clearAfterReplay();
+            }
 
             AccurateEntityPositionHandler.tick();
 
