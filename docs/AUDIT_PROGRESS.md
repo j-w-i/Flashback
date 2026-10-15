@@ -85,3 +85,12 @@ Baseline on Apple Silicon, 1080p60, h264_videotoolbox, flat/Beta test scenes (31
 warm-up and encoder finalisation). These scenes are too light to expose a render bottleneck, so no render-path changes were made on
 speculation. To optimise meaningfully, record a heavy scene (many chunks/entities/particles, 4K, SSAA) and compare this log line
 before/after any change.
+
+### Timeline engine verified through export (dev commands `cut`, `uncut`, `track`)
+All checked by exporting 1080p60 clips and measuring with ffprobe / inspecting frames:
+- Cuts: a 50-100 cut on a 104-tick range shortens the export 5.2 s/312 frames -> 2.7 s/162 frames (exactly the 50 ticks removed);
+  live playback from tick 45 jumps to 107 (steps over the cut).
+- Speed track: 2x -> 2.5 s, 0.5x -> 10.0 s, 1x -> 5.0 s for the same 100-tick range.
+- Time-of-day track (6000 -> 18000) darkens from day to night across the clip; weather track `raining` draws rain with an overcast sky.
+- Test-tool lesson: an export with unlimited bitrate (bitrate 0) is ~36 MB/s of video; use ~20 Mbps for scripted exports.
+Not yet exercised by script: orbit/spectate camera paths, undo/redo through the UI history, audio, other containers, export queue.
