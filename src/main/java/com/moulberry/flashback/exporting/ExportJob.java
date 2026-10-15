@@ -1189,6 +1189,17 @@ public class ExportJob {
         return kept;
     }
 
+    /**
+     * How many video frames an export of this range would contain: the speed, freeze and timelapse tracks and the
+     * cuts all change it, so the answer is the one the exporter itself would work out. Used by the export window to
+     * show the length of the result before anything is rendered.
+     */
+    public static int countExportFrames(EditorState editorState, int startTick, int endTick, double fps) {
+        List<TickInfo> ticks = calculateTicks(editorState, startTick, endTick, fps);
+        ticks = applyCuts(editorState, startTick, ticks);
+        return ticks.size();
+    }
+
     private static List<TickInfo> calculateTicks(EditorState editorState, int startTick, int endTick, double fps) {
         List<TickInfo> ticks = new ArrayList<>();
 

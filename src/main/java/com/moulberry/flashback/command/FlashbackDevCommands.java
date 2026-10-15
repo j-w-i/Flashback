@@ -207,6 +207,11 @@ public final class FlashbackDevCommands {
                 return reply(ctx.getSource(), error(String.valueOf(t)));
             }
         }));
+        dev.then(ClientCommandManager.literal("exportwindow").executes(ctx -> {
+            if (EditorStateManager.getCurrent() == null) return reply(ctx.getSource(), error("not in a replay editor"));
+            com.moulberry.flashback.editor.ui.windows.StartExportWindow.open();
+            return reply(ctx.getSource(), ok("export window opened"));
+        }));
         dev.then(ClientCommandManager.literal("resolution")
             .then(ClientCommandManager.argument("w", IntegerArgumentType.integer(16, 16384))
                 .then(ClientCommandManager.argument("h", IntegerArgumentType.integer(16, 16384))

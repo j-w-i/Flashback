@@ -245,7 +245,9 @@ public class StartExportWindow {
                 ImGui.popTextWrapPos();
             }
 
-            ImGui.dummy(0, 10 * ReplayUI.getUiScale());
+            ImGui.dummy(0, 4 * ReplayUI.getUiScale());
+            renderExportSummary(editorState, config);
+            ImGui.dummy(0, 6 * ReplayUI.getUiScale());
 
             boolean isFullscreen = Minecraft.getInstance().getWindow().isFullscreen();
             if (isFullscreen) {
@@ -398,6 +400,81 @@ public class StartExportWindow {
         // Codecs that ignore a bitrate show nothing here rather than a control that does nothing.
     }
 
+    /** The ticks an export would cover: the chosen range, else the keyframed range, else the whole replay. */
+    private static int[] resolveExportRange(EditorState editorState) {
+        int start, end;
+        if (startEndTick[0] >= 0 && startEndTick[1] >= 0) {
+            start = Math.max(0, startEndTick[0]);
+            end = Math.max(start, startEndTick[1]);
+        } else {
+            var firstAndLastInTracks = editorState.getFirstAndLastTicksInTracks();
+            start = firstAndLastInTracks.start();
+            end = firstAndLastInTracks.end();
+
+            if (start < 0) {
+                start = 0;
+            }
+            if (end < 0 || start == end) {
+                ReplayServer replayServer = Flashback.getReplayServer();
+                if (replayServer != null) {
+                    end = replayServer.getTotalReplayTicks();
+                } else {
+                    end = start + 100;
+                }
+            }
+        }
+
+        ReplayServer replayServer = Flashback.getReplayServer();
+        if (replayServer != null) {
+            int totalTicks = replayServer.getTotalReplayTicks();
+            start = Math.min(start, totalTicks);
+            end = Math.min(end, totalTicks);
+        }
+        return new int[]{start, end};
+    }
+
+    // The planner walks every frame of the export, so the summary is recomputed only when something it depends on moves.
+    private static int summaryModCount;
+    private static int summaryStart = -1;
+    private static int summaryEnd = -1;
+    private static float summaryFps = -1;
+    private static int summaryFrames = -1;
+
+    /** One line under the capture options: how long the result is, how many frames, and about how big the file is. */
+    private static void renderExportSummary(EditorState editorState, FlashbackConfigV1 config) {
+        if (editorState == null) {
+            return;
+        }
+        float fps = Math.max(1, config.internalExport.framerate[0]);
+        int[] range = resolveExportRange(editorState);
+        if (summaryFrames < 0 || summaryModCount != editorState.modCount || summaryStart != range[0]
+                || summaryEnd != range[1] || summaryFps != fps) {
+            try {
+                summaryFrames = ExportJob.countExportFrames(editorState, range[0], range[1], fps);
+            } catch (Throwable t) {
+                summaryFrames = -1;
+                return;
+            }
+            summaryModCount = editorState.modCount;
+            summaryStart = range[0];
+            summaryEnd = range[1];
+            summaryFps = fps;
+        }
+
+        double seconds = summaryFrames / (double) fps;
+        String duration = seconds >= 60
+            ? String.format("%d:%04.1f", (int) (seconds / 60), seconds % 60)
+            : String.format("%.1f s", seconds);
+        String text = I18n.get("flashback.export_summary", duration, summaryFrames);
+
+        var codec = config.internalExport.videoCodec;
+        if (codec != null && codec.usesBitrate() && !config.internalExport.useMaximumBitrate) {
+            double megabytes = stringToBitrate(ImGuiHelper.getString(bitrate)) / 8.0 * seconds / 1_000_000.0;
+            text += I18n.get("flashback.export_summary_size", megabytes < 10 ? String.format("%.1f", megabytes) : String.format("%.0f", megabytes));
+        }
+        ImGui.textDisabled(text);
+    }
+
     private static CompletableFuture<ExportSettings> createExportSettings(@Nullable String name, FlashbackConfigV1 config) {
         int numBitrate;
         if (config.internalExport.useMaximumBitrate || config.internalExport.videoCodec == null
@@ -417,34 +494,9 @@ public class StartExportWindow {
                     return null;
                 }
 
-                int start, end;
-                if (startEndTick[0] >= 0 && startEndTick[1] >= 0) {
-                    start = Math.max(0, startEndTick[0]);
-                    end = Math.max(start, startEndTick[1]);
-                } else {
-                    var firstAndLastInTracks = editorState.getFirstAndLastTicksInTracks();
-                    start = firstAndLastInTracks.start();
-                    end = firstAndLastInTracks.end();
-
-                    if (start < 0) {
-                        start = 0;
-                    }
-                    if (end < 0 || start == end) {
-                        ReplayServer replayServer = Flashback.getReplayServer();
-                        if (replayServer != null) {
-                            end = replayServer.getTotalReplayTicks();
-                        } else {
-                            end = start+100;
-                        }
-                    }
-                }
-
-                ReplayServer replayServer = Flashback.getReplayServer();
-                if (replayServer != null) {
-                    int totalTicks = replayServer.getTotalReplayTicks();
-                    start = Math.min(start, totalTicks);
-                    end = Math.min(end, totalTicks);
-                }
+                int[] range = resolveExportRange(editorState);
+                int start = range[0];
+                int end = range[1];
 
                 LocalPlayer player = Minecraft.getInstance().player;
                 if (player == null) {

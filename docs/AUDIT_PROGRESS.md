@@ -211,3 +211,11 @@ click selecting the diamond offer and shift-click buying it. Replayed through th
 merchant screen (both offer rows, "Librarian - Apprentice" title, trade slots, inventory) are drawn. Lesson: `container.state` sampled right after a seek can
 report "closed" while the frame already shows the container; judge by screenshot, with 2+ s settle.
 Bridge note: trade selection is a screen button, not a slot click - use a real click (`devtools/mac/input click X Y`, screen points).
+
+### Editor UI: the export window now shows what the export will be
+New line above Start Export: `Result: 60.0 s, 3597 frames, about 150 MB` (length, frame count, estimated size at the chosen bitrate; size is hidden for codecs
+without rate control and for "maximum bitrate"). The count comes from the exporter's own tick planner (`ExportJob.countExportFrames`), so speed/freeze/timelapse
+tracks and cuts are included, and it is recomputed only when the editor's modCount, range or framerate changes. Verified: the 1.5 min replay shows 1:30.0 / 5397
+frames / 225 MB; after `cut 100 700` it shows 60.0 s / 3597 frames; the real export of that setup is 3597 frames, 59.95 s (ffprobe). Range resolution moved into
+one helper shared by the summary and the export button so the two cannot disagree.
+Dev command: `/flashback dev exportwindow` opens the window. Screenshot tip: `vision.screenshot` captures only the game framebuffer; use `screencapture -x` to see ImGui.
