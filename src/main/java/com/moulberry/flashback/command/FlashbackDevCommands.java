@@ -186,6 +186,14 @@ public final class FlashbackDevCommands {
                         return reply(ctx.getSource(), error(String.valueOf(t)));
                     }
                 }))));
+        dev.then(ClientCommandManager.literal("spectatecam").executes(ctx -> {
+            try {
+                return addSpectateCamera(ctx.getSource());
+            } catch (Throwable t) {
+                Flashback.LOGGER.error("dev spectatecam failed", t);
+                return reply(ctx.getSource(), error(String.valueOf(t)));
+            }
+        }));
         dev.then(ClientCommandManager.literal("play").executes(ctx -> setPaused(ctx.getSource(), false)));
         dev.then(ClientCommandManager.literal("pause").executes(ctx -> setPaused(ctx.getSource(), true)));
         dev.then(ClientCommandManager.literal("export")
@@ -307,6 +315,33 @@ public final class FlashbackDevCommands {
         }
         state.markDirty();
         return reply(source, ok("orbit camera added, yaw " + fromYaw + " -> " + toYaw + " over " + last + " ticks"));
+    }
+
+    /** Adds a spectate camera following the recorded player from tick 0 and cuts to it. */
+    private static int addSpectateCamera(FabricClientCommandSource source) {
+        EditorState state = EditorStateManager.getCurrent();
+        ReplayServer server = Flashback.getReplayServer();
+        if (state == null || server == null) return reply(source, error("not in a replay editor"));
+        net.minecraft.world.entity.player.Player recorded = server.recordedPlayer();
+        if (recorded == null) return reply(source, error("recorded player not present at this tick (seek into the clip first)"));
+
+        var camera = new com.moulberry.flashback.state.EditorCamera("Spectate test", com.moulberry.flashback.state.EditorCamera.Kind.SPECTATE);
+        var track = new com.moulberry.flashback.state.KeyframeTrack(com.moulberry.flashback.keyframe.types.SpectateKeyframeType.INSTANCE);
+        track.cameraId = camera.id;
+        track.keyframesByTick.put(0, new com.moulberry.flashback.keyframe.impl.SpectateKeyframe(recorded.getUUID()));
+
+        long stamp = state.acquireWrite();
+        try {
+            var scene = state.getCurrentScene(stamp);
+            scene.cameras.add(camera);
+            scene.keyframeTracks.add(track);
+            scene.findOrCreateCameraSwitchTrack().keyframesByTick.put(0,
+                new com.moulberry.flashback.keyframe.impl.CameraSwitchKeyframe(camera.id));
+        } finally {
+            state.release(stamp);
+        }
+        state.markDirty();
+        return reply(source, ok("spectate camera added following " + recorded.getName().getString()));
     }
 
     private static int setPaused(FabricClientCommandSource source, boolean paused) {

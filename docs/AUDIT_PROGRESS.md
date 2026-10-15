@@ -120,3 +120,7 @@ Earlier export checks in this file measured length/HUD, so they were unaffected,
 Orbit camera around the recorded player, yaw 0 -> 360 over the clip, cut to at tick 0. Live playback pose: yaw 1.9 / 77.4 / 218.5 / 335.6 at
 ticks 17 / 111 / 212 / 311, position circling the player at radius ~4. 1107-frame 1080p export shows the player from the front, side and
 back, 0 dark frames. (A paused dev `seek` initially did not re-evaluate camera keyframes because the dev command did not set `forceApplyKeyframes` like the timeline UI does; fixed in the dev command, not a product bug.)
+
+### Spectate camera cut verified end to end (`/flashback dev spectatecam`)
+Replay of the armoured Beta 1.7.3 session, opened from a modern world, spectate camera + cut at tick 0, exported 1080p60 (432 frames, 0 dark
+frames): first-person hand, hearts only, armour relocated to the right of the hearts, no hunger bar, no XP bar, no tutorial toast.
