@@ -181,3 +181,15 @@ rendered end to end; the others are covered by the state/gate check, not by pixe
 Emulator build: its `build.gradle` has a local, uncommitted edit that removes the `java.toolchain` JDK 21 pin (no JDK 21 here; `options.release = 21`
 already pins the bytecode). Recommend keeping it local: committing it would change that repo's build rules for a problem specific to this machine.
 Environment note: the shell had a stale `JAVA_HOME`; use /Library/Java/JavaVirtualMachines/jdk-25.0.2.jdk/Contents/Home.
+
+### Crafting table and furnace recorded and replayed (real clicks through `container.click`)
+Recorded 3407 ticks in `FlashbackTest` (creative, items via `command.run give`), opening a crafting table and a furnace, clicking slots with the bridge
+(`container.open/click/close`; slot indices: crafting 0 result, 1-9 grid, 37+ hotbar; furnace 0 input, 1 fuel, 2 output). Bridge lesson: `chat.send` does not
+reach the server command dispatcher; use `command.run` for `give/tp/setblock/time`.
+Played back through the recorded player (spectate): the Crafting and Furnace screens are drawn, and `container.state` in the replay reports per tick:
+- crafting: grid filled by client prediction only (3 iron ingots + 2 sticks) is present in the replay, the result slot shows `iron_pickaxe`, then empties
+  when the result is taken; after planks (log -> 4 planks, shift-click) the inventory shows them.
+- furnace: coal in the fuel slot, `raw_iron` in the input (counts 8 -> 7 -> 6 as it smelts), `iron_ingot` in the output once smelted, flames and progress arrow drawn.
+- seeking into the middle of either container's life (700 -> 1000, 3300 -> 1000, 700 -> 2700) lands with the right container open and its contents intact.
+Not covered: chest with items being moved, villager trade, enchanting/anvil/brewing, hopper/dispenser layouts, and Beta containers whose layout differs from modern.
+Test-tool lesson: the screenshot size from `vision.screenshot` varies (1708x960 vs 732x412), so a pixel-colour panel detector gave false negatives; trust `container.state`.
