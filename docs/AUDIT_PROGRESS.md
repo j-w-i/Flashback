@@ -230,3 +230,13 @@ from any world. Ad-hoc switching of the era inside one open replay is not meanin
   hunger, XP bar) and the 1.6.4 crafting panel.
 - Not yet recorded: Alpha, Infdev, and Release 1.0-1.5 worlds (they need their own `level-type=historical_experience:<id>` world each).
 - Setup lesson: respawn/daylight - a survival test in a dark Release spawn got the player killed by mobs; set `difficulty peaceful` and `time set day` first.
+
+### Release 1.0.0 and Alpha 1.0.17 recorded and replayed (world upgraded in place with `/hex upgrade`, one era per replay)
+Flow used (matches how the emulator works): in the test world run `/hex upgrade <version>`, exit (the staged generator is written on server stop), relaunch the
+world (now that era), record the standard session (crafting table, chest, survival inventory), exit, open the replay from a modern world (`FlashbackTest`).
+- Release 1.0.0: replay log `Applied recorded version-emulator version ...release_1_0_0` then stack `vanilla+programmer_art+continuation+golden_days_base`; hearts +
+  armour row + hunger drumsticks, crafting panel in the old style, chest/crafting-table textures of the era.
+- Alpha 1.0.17: stack adds `golden_days_alpha`; the replay shows the "Minecraft Alpha v1.0.17" corner label, hearts only with the Alpha-style armour row to the right, no
+  hunger bar, no XP bar, Alpha chest/crafting table, Alpha crafting screen. A 1080p60 export of it (1521 frames, 1920x1080) keeps all of that and has 0 dark frames of
+  305 sampled.
+- Eras with recorded + replayed evidence now: Beta 1.7.3, Release 1.0.0, Release 1.6.4, Alpha 1.0.17.
