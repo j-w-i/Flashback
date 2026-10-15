@@ -119,5 +119,4 @@ Earlier export checks in this file measured length/HUD, so they were unaffected,
 ### Orbit camera verified (`/flashback dev orbit <fromYaw> <toYaw>`)
 Orbit camera around the recorded player, yaw 0 -> 360 over the clip, cut to at tick 0. Live playback pose: yaw 1.9 / 77.4 / 218.5 / 335.6 at
 ticks 17 / 111 / 212 / 311, position circling the player at radius ~4. 1107-frame 1080p export shows the player from the front, side and
-back, 0 dark frames. Note: a paused `seek` alone does not re-evaluate camera keyframes (the reading stayed at the last value until playback
-stepped a tick) - worth a look as a UI nicety: scrubbing while paused should update the camera.
+back, 0 dark frames. (A paused dev `seek` initially did not re-evaluate camera keyframes because the dev command did not set `forceApplyKeyframes` like the timeline UI does; fixed in the dev command, not a product bug.)

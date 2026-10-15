@@ -80,6 +80,7 @@ public final class FlashbackDevCommands {
                 ReplayServer server = Flashback.getReplayServer();
                 if (server == null) return reply(ctx.getSource(), error("not in a replay"));
                 server.goToReplayTick(IntegerArgumentType.getInteger(ctx, "tick"));
+                server.forceApplyKeyframes.set(true); // the timeline UI does the same, so a paused scrub re-evaluates cameras
                 return reply(ctx.getSource(), ok("seeking"));
             })));
         dev.then(ClientCommandManager.literal("spectate").executes(ctx -> {
