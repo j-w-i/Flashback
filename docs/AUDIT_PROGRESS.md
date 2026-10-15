@@ -144,3 +144,9 @@ furnaces/crafting tables, or Beta containers whose layout differs from the moder
 - Undo/redo: three camera keyframes inserted through the timeline UI; Cmd+Z removed one per press (4 -> 3 -> 2 keyframes counting the
   camera-switch key), Cmd+Y restored one. On macOS the app's "Ctrl" bindings are Command (by design, `replaceCtrlWithCommand`). Plain `P` (pause) works.
 - Tool lesson: GLFW ignores modifier flags on synthetic key events; hold the real modifier (`devtools/mac/input chord`).
+
+### Weather rendering verified in export (all four modes)
+Weather track `raining` / `snowing` / `thundering` / `clear` on a clear-day replay: rain streaks, snow flakes, darkened sky + rain for thunder, and
+a clean blue sky for clear. 0 dark frames in all four. Rain pixels change between adjacent frames (the animation advances; clear sky differs by
+exactly 0), so weather animates through the export. This covers weather *rendering* on 1.21.1; it replaces the 26.x-only source-inspection
+assertions that the check suite now skips.
