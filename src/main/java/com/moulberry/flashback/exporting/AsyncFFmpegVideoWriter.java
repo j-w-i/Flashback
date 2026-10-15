@@ -47,6 +47,9 @@ public class AsyncFFmpegVideoWriter implements AutoCloseable, VideoWriter {
     @Nullable
     private ArrayBlockingQueue<Long> reusePictureData;
 
+    private final java.util.concurrent.atomic.AtomicLong encodeThreadNanos = new java.util.concurrent.atomic.AtomicLong();
+    private final java.util.concurrent.atomic.AtomicLong rescaleThreadNanos = new java.util.concurrent.atomic.AtomicLong();
+
     private final AtomicBoolean finishRescaleThread = new AtomicBoolean(false);
     private final AtomicBoolean finishEncodeThread = new AtomicBoolean(false);
     private final AtomicBoolean finishedWriting = new AtomicBoolean(false);
@@ -258,7 +261,9 @@ public class AsyncFFmpegVideoWriter implements AutoCloseable, VideoWriter {
 
                     ByteBuffer buffer = MemoryUtil.memByteBuffer(src.pixels, (int) src.size);
 
+                    long encT = System.nanoTime();
                     recorder.recordImage(src.width, src.height, src.ffmpegPixelFormat(), buffer);
+                    this.encodeThreadNanos.addAndGet(System.nanoTime() - encT);
                     if (src.audioBuffer != null) {
                         recorder.recordSamples(src.audioBuffer);
                     }
@@ -380,8 +385,10 @@ public class AsyncFFmpegVideoWriter implements AutoCloseable, VideoWriter {
                     picture.width(dstWidth);
                     picture.height(dstHeight);
 
+                    long scaleT = System.nanoTime();
                     swscale.sws_scale(img_convert_ctx, tmp_picture_ptr, tmp_picture.linesize(),
                             0, src.height, picture_ptr, picture.linesize());
+                    this.rescaleThreadNanos.addAndGet(System.nanoTime() - scaleT);
 
                     this.encodeQueue.put(new ImageFrame(tempPointerAddress, dstWidth, dstHeight, dstSize, dstPixelFormat, src.audioBuffer));
                 } catch (Throwable t) {
@@ -478,6 +485,8 @@ public class AsyncFFmpegVideoWriter implements AutoCloseable, VideoWriter {
         }
 
         checkEncodeError(null);
+        Flashback.LOGGER.info("Writer timing: rescale thread {} ms (sws_scale), encode thread {} ms (recordImage)",
+            this.rescaleThreadNanos.get() / 1_000_000L, this.encodeThreadNanos.get() / 1_000_000L);
     }
 
     @Override

@@ -150,3 +150,24 @@ Weather track `raining` / `snowing` / `thundering` / `clear` on a clear-day repl
 a clean blue sky for clear. 0 dark frames in all four. Rain pixels change between adjacent frames (the animation advances; clear sky differs by
 exactly 0), so weather animates through the export. This covers weather *rendering* on 1.21.1; it replaces the 26.x-only source-inspection
 assertions that the check suite now skips.
+
+### Timelapse track verified (`/flashback dev track timelapse <replayTick> <outputTicks>`)
+A timelapse keyframe pair maps a source range onto an output duration: tickrate = (Δ source ticks / Δ output ticks) x 20. 100-tick range exported 1080p60:
+- 0->0, 100->40 : 2.0 s (120 frames), 5x faster. Matches 100 / 40 x 20 = 50 tps.
+- 0->0, 100->200: 10.0 s (599 frames), 0.5x. 
+- 0->0, 50->200 (50-tick range): 10.0 s. 
+- Invalid pair (right output time <= left): the track is ignored and playback stays at 1x (5.0 s), with the on-screen warning. No crash.
+- No-track baseline for the same replay: 175 ticks = 8.75 s. Exact in all cases.
+
+### Export performance at 4K: the bottleneck is the hardware encoder, not rendering
+New dev command `/flashback dev resolution <w> <h> <ssaa>`, and `AsyncFFmpegVideoWriter` now logs the time spent on its two worker threads.
+599-frame export of the same scene (h264_videotoolbox, Apple Silicon):
+| | total | render | sws_scale thread | encode thread (`recordImage`) |
+|---|---|---|---|---|
+| 1080p | 4.4 ms/frame | 6.8 s / 5396 f | - | - |
+| 4K | 17.3 ms/frame (10.35 s) | 1.1 s | 5.1-6.0 s | 9.2 s |
+| 4K + SSAA | 17.3 ms/frame (10.38 s) | 1.35 s | 6.7 s | 9.2 s |
+The three stages run on separate threads and overlap, so wall time equals the slowest one: the encoder at ~15 ms/frame for 4K. Rendering is ~1.8 ms/frame
+and SSAA costs ~0.4 ms more. Changing the swscale flags (bilinear, fast-bilinear, no accurate-rounding) did not move the total, which confirms it.
+Conclusion: there is nothing to gain by optimising the render path on this machine; 4K speed is set by VideoToolbox. A different encoder (libx264
+`ultrafast`, for example) is the only lever. The 1080p run of the 5396-frame replay was 23.6 s, 4.4 ms/frame, which is real-time x 11 at 60 fps.

@@ -171,6 +171,15 @@ public final class FlashbackDevCommands {
                     }
                     return reply(ctx.getSource(), ok(what + " = " + on));
                 }))));
+        dev.then(ClientCommandManager.literal("resolution")
+            .then(ClientCommandManager.argument("w", IntegerArgumentType.integer(16, 16384))
+                .then(ClientCommandManager.argument("h", IntegerArgumentType.integer(16, 16384))
+                    .then(ClientCommandManager.argument("ssaa", BoolArgumentType.bool()).executes(ctx -> {
+                        var export = Flashback.getConfig().internalExport;
+                        export.resolution = new int[]{IntegerArgumentType.getInteger(ctx, "w"), IntegerArgumentType.getInteger(ctx, "h")};
+                        export.ssaa = BoolArgumentType.getBool(ctx, "ssaa");
+                        return reply(ctx.getSource(), ok("export " + export.resolution[0] + "x" + export.resolution[1] + " ssaa=" + export.ssaa));
+                    })))));
         dev.then(ClientCommandManager.literal("runqueue").executes(ctx -> {
             com.moulberry.flashback.exporting.ExportJobQueue.drainingQueue = true;
             return reply(ctx.getSource(), ok("draining queue of " + com.moulberry.flashback.exporting.ExportJobQueue.count()));
