@@ -60,6 +60,7 @@
     "visuals.MixinPlayer",
     "visuals.MixinPlayerRenderer",
     "visuals.MixinRenderStateShard",
+    "visuals.MixinToastManager",
     "visuals.MixinWeatherEffectRenderer"
   ],
   "injectors": {

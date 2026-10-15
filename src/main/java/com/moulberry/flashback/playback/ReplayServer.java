@@ -1674,6 +1674,11 @@ public class ReplayServer extends IntegratedServer {
         }
     }
 
+    /** Where a freshly opened replay places its free camera relative to the recorded player. */
+    private static final double FOLLOW_DISTANCE_BEHIND = 3.5;
+    private static final double FOLLOW_HEIGHT_ABOVE = 1.0;
+    private static final float FOLLOW_PITCH = 12.0f;
+
     private void tryFollowLocalPlayer() {
         if (this.spawnLevel == null) {
             return;
@@ -1696,8 +1701,16 @@ public class ReplayServer extends IntegratedServer {
             }
             if (shouldFollow) {
                 replayViewer.followLocalPlayerNextTick = false;
-                replayViewer.teleportTo(currentLevel, follow.getX(), follow.getY(), follow.getZ(),
-                    follow.getYRot(), follow.getXRot());
+                // Start a few blocks behind and above the player, looking the way they look, instead of exactly
+                // on top of them: placing the free camera at the player's position put it inside their head,
+                // so the first view of every replay (and any export taken from it) was a wall of skin.
+                double yawRad = Math.toRadians(follow.getYRot());
+                double behind = FOLLOW_DISTANCE_BEHIND;
+                replayViewer.teleportTo(currentLevel,
+                    follow.getX() + Math.sin(yawRad) * behind,
+                    follow.getY() + FOLLOW_HEIGHT_ABOVE,
+                    follow.getZ() - Math.cos(yawRad) * behind,
+                    follow.getYRot(), FOLLOW_PITCH);
             }
         }
 
