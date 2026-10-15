@@ -204,3 +204,10 @@ Test-tool lesson: the screenshot size from `vision.screenshot` varies (1708x960 
 - FIXED: the replay survival inventory's character preview was a black box; new `MixinInventoryScreenPreview` draws the recorded player there (armoured model verified in replay). All `devtools/checks` suites still pass.
 - Hotbar toggle (`recordHotbar`) vs GUI recording: independent data paths (see below); two scripted sessions (selection/give/clear/drop, and inventory-menu moves)
   replayed with a HUD hotbar identical to the live one.
+
+### Chest item moves and villager trade replay (modern world, `FlashbackTest`)
+Recorded 1324 ticks: chest with diamond / golden apple / iron sword (moves, shift-click, partial stack), then a Librarian trade (2 offers) with a real-mouse
+click selecting the diamond offer and shift-click buying it. Replayed through the recorded player: the chest screen (items in their moved slots) and the
+merchant screen (both offer rows, "Librarian - Apprentice" title, trade slots, inventory) are drawn. Lesson: `container.state` sampled right after a seek can
+report "closed" while the frame already shows the container; judge by screenshot, with 2+ s settle.
+Bridge note: trade selection is a screen button, not a slot click - use a real click (`devtools/mac/input click X Y`, screen points).
