@@ -219,3 +219,14 @@ tracks and cuts are included, and it is recomputed only when the editor's modCou
 frames / 225 MB; after `cut 100 700` it shows 60.0 s / 3597 frames; the real export of that setup is 3597 frames, 59.95 s (ffprobe). Range resolution moved into
 one helper shared by the summary and the export button so the two cannot disagree.
 Dev command: `/flashback dev exportwindow` opens the window. Screenshot tip: `vision.screenshot` captures only the game framebuffer; use `screencapture -x` to see ImGui.
+
+### Era texture switching in replays (one era per replay - confirmed by the emulator's author)
+An era is a property of the world, so a replay can only be of the era it was recorded in: record in that era's world, exit (the replay saves), then open the replay
+from any world. Ad-hoc switching of the era inside one open replay is not meaningful and was removed.
+- Beta 1.7.3 (`EraBeta`): replay applies `vanilla+programmer_art+continuation+golden_days_base`, Beta-style crafting table / chest / survival inventory (with the
+  recorded player's armoured model in the preview), toasts in the Beta grey.
+- Release 1.6.4 (`EraRel`): live stack `vanilla+programmer_art+continuation`; replay opened from a modern world logs `Applied recorded version-emulator version
+  ...release_1_6_4` then `Historical textures active: stack=vanilla+programmer_art+continuation|...`, and the frames show the Release HUD (hearts, armour above,
+  hunger, XP bar) and the 1.6.4 crafting panel.
+- Not yet recorded: Alpha, Infdev, and Release 1.0-1.5 worlds (they need their own `level-type=historical_experience:<id>` world each).
+- Setup lesson: respawn/daylight - a survival test in a dark Release spawn got the player killed by mobs; set `difficulty peaceful` and `time set day` first.
