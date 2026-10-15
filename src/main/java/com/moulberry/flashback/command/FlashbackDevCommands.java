@@ -112,6 +112,34 @@ public final class FlashbackDevCommands {
             });
             return reply(ctx.getSource(), ok("equipped " + material));
         })));
+        dev.then(ClientCommandManager.literal("cut")
+            .then(ClientCommandManager.argument("from", IntegerArgumentType.integer(0))
+                .then(ClientCommandManager.argument("to", IntegerArgumentType.integer(0)).executes(ctx -> {
+                    EditorState state = EditorStateManager.getCurrent();
+                    if (state == null) return reply(ctx.getSource(), error("not in a replay editor"));
+                    var cut = state.addCut(IntegerArgumentType.getInteger(ctx, "from"), IntegerArgumentType.getInteger(ctx, "to"));
+                    JsonObject o = ok(cut == null ? "empty range, nothing cut" : "cut " + cut.start + ".." + cut.end);
+                    o.addProperty("cuts", state.normalisedCuts().size());
+                    return reply(ctx.getSource(), o);
+                }))));
+        dev.then(ClientCommandManager.literal("uncut").executes(ctx -> {
+            EditorState state = EditorStateManager.getCurrent();
+            if (state == null) return reply(ctx.getSource(), error("not in a replay editor"));
+            state.setCuts(null);
+            return reply(ctx.getSource(), ok("all cuts removed"));
+        }));
+        dev.then(ClientCommandManager.literal("track")
+            .then(ClientCommandManager.argument("kind", StringArgumentType.word())
+                .then(ClientCommandManager.argument("tick", IntegerArgumentType.integer(0))
+                    .then(ClientCommandManager.argument("value", StringArgumentType.word()).executes(ctx -> {
+                        try {
+                            return addTrackKeyframe(ctx.getSource(), StringArgumentType.getString(ctx, "kind"),
+                                IntegerArgumentType.getInteger(ctx, "tick"), StringArgumentType.getString(ctx, "value"));
+                        } catch (Throwable t) {
+                            Flashback.LOGGER.error("dev track failed", t);
+                            return reply(ctx.getSource(), error(String.valueOf(t)));
+                        }
+                    })))));
         dev.then(ClientCommandManager.literal("play").executes(ctx -> setPaused(ctx.getSource(), false)));
         dev.then(ClientCommandManager.literal("pause").executes(ctx -> setPaused(ctx.getSource(), true)));
         dev.then(ClientCommandManager.literal("export")
@@ -128,6 +156,59 @@ public final class FlashbackDevCommands {
 
         var flashback = ClientCommandManager.literal("flashback").then(dev);
         dispatcher.register(flashback);
+    }
+
+    /** Adds a keyframe of a global (non-camera) type: timeofday, weather, speed, freeze, timelapse, fov. */
+    private static int addTrackKeyframe(FabricClientCommandSource source, String kind, int tick, String value) {
+        EditorState state = EditorStateManager.getCurrent();
+        if (state == null) return reply(source, error("not in a replay editor"));
+        com.moulberry.flashback.keyframe.KeyframeType<?> type;
+        com.moulberry.flashback.keyframe.Keyframe keyframe;
+        switch (kind) {
+            case "timeofday" -> {
+                type = com.moulberry.flashback.keyframe.types.TimeOfDayKeyframeType.INSTANCE;
+                keyframe = new com.moulberry.flashback.keyframe.impl.TimeOfDayKeyframe(Integer.parseInt(value));
+            }
+            case "weather" -> {
+                type = com.moulberry.flashback.keyframe.types.WeatherKeyframeType.INSTANCE;
+                keyframe = new com.moulberry.flashback.keyframe.impl.WeatherKeyframe(
+                    com.moulberry.flashback.combo_options.WeatherOverride.valueOf(value.toUpperCase()));
+            }
+            case "speed" -> {
+                type = com.moulberry.flashback.keyframe.types.SpeedKeyframeType.INSTANCE;
+                keyframe = new com.moulberry.flashback.keyframe.impl.TickrateKeyframe(Float.parseFloat(value) * 20.0f); // value is a speed multiplier
+            }
+            case "freeze" -> {
+                type = com.moulberry.flashback.keyframe.types.FreezeKeyframeType.INSTANCE;
+                keyframe = new com.moulberry.flashback.keyframe.impl.FreezeKeyframe(Boolean.parseBoolean(value), 0);
+            }
+            case "timelapse" -> {
+                type = com.moulberry.flashback.keyframe.types.TimelapseKeyframeType.INSTANCE;
+                keyframe = new com.moulberry.flashback.keyframe.impl.TimelapseKeyframe(Integer.parseInt(value));
+            }
+            default -> {
+                return reply(source, error("unknown kind " + kind + " (timeofday, weather, speed, freeze, timelapse)"));
+            }
+        }
+        long stamp = state.acquireWrite();
+        try {
+            var scene = state.getCurrentScene(stamp);
+            int index = -1;
+            for (int i = 0; i < scene.keyframeTracks.size(); i++) {
+                if (scene.keyframeTracks.get(i).keyframeType == type && scene.keyframeTracks.get(i).cameraId == null) {
+                    index = i;
+                }
+            }
+            if (index < 0) {
+                scene.keyframeTracks.add(new com.moulberry.flashback.state.KeyframeTrack(type));
+                index = scene.keyframeTracks.size() - 1;
+            }
+            scene.setKeyframe(index, tick, keyframe);
+        } finally {
+            state.release(stamp);
+        }
+        state.markDirty();
+        return reply(source, ok("added " + kind + " keyframe at " + tick));
     }
 
     private static int setPaused(FabricClientCommandSource source, boolean paused) {
@@ -190,7 +271,9 @@ public final class FlashbackDevCommands {
             export.resolution[0] - export.resolution[0] % 2, export.resolution[1] - export.resolution[1] % 2, start, end,
             export.projection, export.orthographicZoom[0],
             Math.max(1, export.framerate[0]), export.resetRng, export.depthMap,
-            export.container, codec, encoder, 0,
+            export.container, codec, encoder,
+            // 0 means "as high as allowed" (a 5 s clip came out at 180 MB); use the UI's default of 20 Mbps unless maximum is chosen
+            export.useMaximumBitrate || !codec.usesBitrate() ? 0 : 20_000_000,
             codec.hasProResProfile() ? export.proResProfile : null,
             false, export.ssaa, noGui,
             export.stereoAudio, audio,
@@ -213,6 +296,9 @@ public final class FlashbackDevCommands {
         ReplayServer server = Flashback.getReplayServer();
         if (server != null) {
             o.addProperty("replayTick", server.getReplayTick());
+            if (EditorStateManager.getCurrent() != null) {
+                o.addProperty("cuts", EditorStateManager.getCurrent().normalisedCuts().size());
+            }
             o.addProperty("totalTicks", server.getTotalReplayTicks());
             o.addProperty("paused", server.replayPaused);
             o.addProperty("fastForwarding", server.fastForwarding);
