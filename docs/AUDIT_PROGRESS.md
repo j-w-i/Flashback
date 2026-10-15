@@ -171,3 +171,13 @@ The three stages run on separate threads and overlap, so wall time equals the sl
 and SSAA costs ~0.4 ms more. Changing the swscale flags (bilinear, fast-bilinear, no accurate-rounding) did not move the total, which confirms it.
 Conclusion: there is nothing to gain by optimising the render path on this machine; 4K speed is set by VideoToolbox. A different encoder (libx264
 `ultrafast`, for example) is the only lever. The 1080p run of the 5396-frame replay was 23.6 s, 4.4 ms/frame, which is real-time x 11 at 60 fps.
+
+### All 32 emulator eras checked through the replay-playback path (`/flashback dev eras`)
+The command applies each version via `ModIntegrations.applyForReplay` (the same call playback makes from recorded metadata), reads it back, and asks
+the emulator's `HudHelper.hideHungerBar/hideExperienceBar`, then restores the previous session. Result: 32/32 applied and read back exactly.
+No hunger/XP: alpha, alpha_1_0_x, alpha_1_1_0, alpha_1_2_0, infdev_420/611, beta_1_0 to beta_1_6, beta_1_7_3. Hunger + XP: beta_1_8_1, beta_1_9_pre_1-6,
+release_1_0_0, 1_1, 1_2_5, 1_3, 1_4, 1_5, 1_6_4. This replaces the earlier "assumed" status. Still only Beta 1.7.3 and Release 1.6.4 were recorded and
+rendered end to end; the others are covered by the state/gate check, not by pixels.
+Emulator build: its `build.gradle` has a local, uncommitted edit that removes the `java.toolchain` JDK 21 pin (no JDK 21 here; `options.release = 21`
+already pins the bytecode). Recommend keeping it local: committing it would change that repo's build rules for a problem specific to this machine.
+Environment note: the shell had a stale `JAVA_HOME`; use /Library/Java/JavaVirtualMachines/jdk-25.0.2.jdk/Contents/Home.

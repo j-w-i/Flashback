@@ -171,6 +171,42 @@ public final class FlashbackDevCommands {
                     }
                     return reply(ctx.getSource(), ok(what + " = " + on));
                 }))));
+        dev.then(ClientCommandManager.literal("eras").executes(ctx -> {
+            // Applies every emulator version through the replay-playback session path and reports the HUD gates it produces.
+            try {
+                Class<?> versions = Class.forName("net.historicalexperience.version.HistoricalVersions");
+                Class<?> hud = Class.forName("net.historicalexperience.client.hud.HudHelper");
+                var hunger = hud.getMethod("hideHungerBar");
+                var xp = hud.getMethod("hideExperienceBar");
+                String previous = com.moulberry.flashback.compat.ModIntegrations.readEmulatorVersion();
+                com.google.gson.JsonArray out = new com.google.gson.JsonArray();
+                for (Object version : (java.util.List<?>) versions.getMethod("all").invoke(null)) {
+                    String id = (String) version.getClass().getMethod("id").invoke(version);
+                    var state = new java.util.LinkedHashMap<String, String>();
+                    state.put(com.moulberry.flashback.compat.ModIntegrations.VERSION_EMULATOR, id);
+                    com.moulberry.flashback.compat.ModIntegrations.applyForReplay(state);
+                    JsonObject row = new JsonObject();
+                    row.addProperty("id", id);
+                    row.addProperty("applied", id.equals(com.moulberry.flashback.compat.ModIntegrations.readEmulatorVersion()));
+                    row.addProperty("hideHunger", (Boolean) hunger.invoke(null));
+                    row.addProperty("hideXp", (Boolean) xp.invoke(null));
+                    out.add(row);
+                }
+                var restore = new java.util.LinkedHashMap<String, String>();
+                if (previous != null) {
+                    restore.put(com.moulberry.flashback.compat.ModIntegrations.VERSION_EMULATOR, previous);
+                    com.moulberry.flashback.compat.ModIntegrations.applyForReplay(restore);
+                } else {
+                    com.moulberry.flashback.compat.ModIntegrations.clearAfterReplay();
+                }
+                JsonObject o = ok("checked " + out.size() + " versions");
+                o.add("versions", out);
+                return reply(ctx.getSource(), o);
+            } catch (Throwable t) {
+                Flashback.LOGGER.error("dev eras failed", t);
+                return reply(ctx.getSource(), error(String.valueOf(t)));
+            }
+        }));
         dev.then(ClientCommandManager.literal("resolution")
             .then(ClientCommandManager.argument("w", IntegerArgumentType.integer(16, 16384))
                 .then(ClientCommandManager.argument("h", IntegerArgumentType.integer(16, 16384))
