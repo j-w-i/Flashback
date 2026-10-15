@@ -623,6 +623,11 @@ public class ExportJob {
 
         RenderSystem.replayQueue();
         FramebufferUtils.clear(renderTarget, EMPTY_CLEAR_COLOUR);
+        // clear() leaves the default framebuffer bound. Vanilla binds the main target immediately before
+        // GameRenderer.render (Minecraft.runTick); without it, whether the frame is drawn into the export target
+        // depends on whatever state the previous step left behind, and every frame after a client tick came out
+        // black (about one frame in five).
+        renderTarget.bindWrite(true);
         minecraft.gameRenderer.render(timer, true);
     }
 

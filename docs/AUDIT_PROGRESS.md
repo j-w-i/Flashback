@@ -94,3 +94,17 @@ All checked by exporting 1080p60 clips and measuring with ffprobe / inspecting f
 - Time-of-day track (6000 -> 18000) darkens from day to night across the clip; weather track `raining` draws rain with an overcast sky.
 - Test-tool lesson: an export with unlimited bitrate (bitrate 0) is ~36 MB/s of video; use ~20 Mbps for scripted exports.
 Not yet exercised by script: orbit/spectate camera paths, undo/redo through the UI history, audio, other containers, export queue.
+
+### BUG FIXED: ~1 in 5 exported frames was black (all containers, every export)
+Symptom (found while measuring exported frames, not visible in live playback): in a plain 1080p60 export, 21 % of frames were
+fully black except for the player/nametag, at a pattern of every 4th-6th frame (60 fps video from 20 tps ticks).
+Diagnosis by elimination with per-frame probes: world state (time, sky, sections, layers drawn) identical on black and good frames;
+`glReadPixels` on the export target immediately after `GameRenderer.render` was already 0,0,0 on black frames, while the terrain
+layers and sky were being issued. => the frame was being drawn into a different framebuffer than the export target.
+Cause: `ExportJob.render` called `FramebufferUtils.clear(target)`, which restores the previous bindings (the default framebuffer),
+then `GameRenderer.render`, which assumes the main target is bound (vanilla binds it in `Minecraft.runTick` first). Frames that
+followed a client tick drew into the wrong target.
+Fix: `renderTarget.bindWrite(true)` before `gameRenderer.render` in `ExportJob.render`.
+Verified: 0 dark frames of 738 (mp4, mkv, mov, webm, avi) and 0 of 1230 (gif), vs 21 % / 49 % / 36 % (mp4/webm/mkv) before.
+Containers all produce valid files: mp4 mkv mov webm avi gif webp + PNG sequence (via `/flashback dev exportas`).
+Earlier export checks in this file measured length/HUD, so they were unaffected, but any export made before this commit has flicker.

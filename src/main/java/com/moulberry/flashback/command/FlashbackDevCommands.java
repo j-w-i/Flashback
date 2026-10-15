@@ -140,6 +140,19 @@ public final class FlashbackDevCommands {
                             return reply(ctx.getSource(), error(String.valueOf(t)));
                         }
                     })))));
+        dev.then(ClientCommandManager.literal("cleartracks").executes(ctx -> {
+            EditorState state = EditorStateManager.getCurrent();
+            if (state == null) return reply(ctx.getSource(), error("not in a replay editor"));
+            long stamp = state.acquireWrite();
+            try {
+                state.getCurrentScene(stamp).keyframeTracks.clear();
+                state.getCurrentScene(stamp).cameras.clear();
+            } finally {
+                state.release(stamp);
+            }
+            state.setCuts(null);
+            return reply(ctx.getSource(), ok("tracks, cameras and cuts cleared"));
+        }));
         dev.then(ClientCommandManager.literal("play").executes(ctx -> setPaused(ctx.getSource(), false)));
         dev.then(ClientCommandManager.literal("pause").executes(ctx -> setPaused(ctx.getSource(), true)));
         dev.then(ClientCommandManager.literal("export")
@@ -150,6 +163,27 @@ public final class FlashbackDevCommands {
                             StringArgumentType.getString(ctx, "output"));
                     } catch (Throwable t) {
                         Flashback.LOGGER.error("dev export failed", t);
+                        return reply(ctx.getSource(), error(String.valueOf(t)));
+                    }
+                }))));
+
+        dev.then(ClientCommandManager.literal("exportas")
+            .then(ClientCommandManager.argument("container", StringArgumentType.word())
+                .then(ClientCommandManager.argument("output", StringArgumentType.greedyString()).executes(ctx -> {
+                    try {
+                        // Temporarily selects the container exactly as the export window's combo does, then restores it.
+                        var export = Flashback.getConfig().internalExport;
+                        var previous = export.container;
+                        export.container = com.moulberry.flashback.combo_options.VideoContainer.valueOf(
+                            StringArgumentType.getString(ctx, "container").toUpperCase());
+                        export.videoCodec = null;
+                        try {
+                            return startExport(ctx.getSource(), true, StringArgumentType.getString(ctx, "output"));
+                        } finally {
+                            export.container = previous;
+                        }
+                    } catch (Throwable t) {
+                        Flashback.LOGGER.error("dev exportas failed", t);
                         return reply(ctx.getSource(), error(String.valueOf(t)));
                     }
                 }))));
@@ -277,7 +311,7 @@ public final class FlashbackDevCommands {
             codec.hasProResProfile() ? export.proResProfile : null,
             false, export.ssaa, noGui,
             export.stereoAudio, audio,
-            output, null);
+            output, export.container.isImageSequence() ? "%04d" : null);
 
         Flashback.EXPORT_JOB = new ExportJob(settings);
         JsonObject o = ok("export started");
