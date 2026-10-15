@@ -527,7 +527,7 @@ public class ReplayGamePacketHandler implements ClientGamePacketListener {
 
         // Only in a replay when containers are being shown, so with that off this is skipped exactly
         // as it always was.
-        if (!GuiPlayback.shouldShow()) {
+        if (!GuiPlayback.enabled()) {
             return;
         }
 

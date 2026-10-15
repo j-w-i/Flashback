@@ -79,7 +79,7 @@ public final class GuiDisplay {
 
     /** Called on the client thread when the replay says a container changed. */
     public static void handle(FlashbackRemoteContainer container) {
-        if (!GuiPlayback.shouldShow()) {
+        if (!GuiPlayback.enabled()) {
             clear();
             return;
         }
@@ -349,15 +349,6 @@ public final class GuiDisplay {
     }
 
     /**
-     * Whether the camera is looking through a player's eyes, which is the only place a replay's
-     * container belongs.
-     *
-     * <p>This is the same thing {@code Flashback.getSpectatingPlayer} answers, asked without its
-     * checks for a camera that has briefly been left pointing at an entity the replay has already
-     * replaced: those are for deciding whether to read a player's inventory, and here they would
-     * blink the window off for a frame whenever an entity was swapped.
-     */
-    /**
      * The player the replay is of, as this client currently has them.
      *
      * <p>The interface is about them, so the readouts beside it are too - the hotbar, the health and
@@ -430,7 +421,7 @@ public final class GuiDisplay {
             clear();
             return;
         }
-        if (!Flashback.isInReplay() || !GuiPlayback.shouldShow()) {
+        if (!Flashback.isInReplay() || !GuiPlayback.enabled()) {
             clear();
             return;
         }

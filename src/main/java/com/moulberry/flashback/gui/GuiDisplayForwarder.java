@@ -46,7 +46,7 @@ public final class GuiDisplayForwarder {
     }
 
     private static void openWithType(ReplayServer server, int containerId, String menuType, Component title) {
-        if (!GuiPlayback.shouldShow()) {
+        if (!GuiPlayback.enabled()) {
             return;
         }
         openContainerId = containerId;
@@ -93,7 +93,7 @@ public final class GuiDisplayForwarder {
         if (openContainerId == containerId) {
             openContainerId = -1;
         }
-        if (!GuiPlayback.shouldShow()) {
+        if (!GuiPlayback.enabled()) {
             return;
         }
         send(server, FlashbackRemoteContainer.close(containerId));
@@ -113,7 +113,7 @@ public final class GuiDisplayForwarder {
 
     /** True when the recording says this container is the one on screen. */
     public static boolean isOpen(int containerId) {
-        return openContainerId == containerId && GuiPlayback.shouldShow();
+        return openContainerId == containerId && GuiPlayback.enabled();
     }
 
     /**

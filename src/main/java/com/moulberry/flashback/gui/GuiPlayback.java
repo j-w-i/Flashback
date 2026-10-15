@@ -25,9 +25,4 @@ public final class GuiPlayback {
         }
     }
 
-    /** True when a recorded container should be shown right now. */
-    public static boolean shouldShow() {
-        return enabled();
-    }
-
 }

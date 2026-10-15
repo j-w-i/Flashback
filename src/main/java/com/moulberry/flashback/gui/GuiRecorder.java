@@ -66,8 +66,6 @@ public final class GuiRecorder {
     private static final Map<Integer, GuiEventLog.SlotState> lastStates = new HashMap<>();
     private static int lastContainerId = -1;
     private static boolean broken;
-    @Nullable
-    private static java.lang.reflect.Field hoveredSlotField;
     private static boolean complained;
 
     private GuiRecorder() {
@@ -84,12 +82,11 @@ public final class GuiRecorder {
     }
 
     /**
-     * A container screen was shown, or closed.
+     * A screen was shown. Also fires when a screen is resized, which is not a new screen.
      *
      * <p>Called for every screen, because the log is also the record of which interfaces were used;
      * only container screens carry items, and only those are snapshotted.
      */
-    /** A screen was shown. Also fires when a screen is resized, which is not a new screen. */
     public static void screenOpened(Screen screen) {
         try {
             if (screen == currentScreen) {
@@ -140,21 +137,16 @@ public final class GuiRecorder {
     }
 
     /**
-     * A player clicked in a container.
-     *
-     * <p>This is the intent: the slot, the button and the kind of click. What it did to the items is
-     * logged separately, when the container shows the result.
-     */
-    /**
      * The player clicked in a container.
      *
-     * <p>Only the screen is passed in; which slot was clicked is read from it, because a hook that
+     * <p>This is the intent: the slot, the button and the kind of click. What it did to the items is
+     * logged separately, when the container shows the result. Only the screen is passed in; which slot was clicked is read from it, because a hook that
      * named the slot would have to name the shape of a method that differs between game builds. The
      * item movements themselves do not depend on this at all - they are worked out from the container
      * changing - so a version where this cannot be read still produces a complete record of what
      * moved, just without the click that caused it.
      */
-    public static void slotClicked(Object screen) {
+    public static void slotClicked(AbstractContainerScreen<?> screen) {
         try {
             if (!enabled() || screen == null) {
                 return;
@@ -177,34 +169,9 @@ public final class GuiRecorder {
 
     /** The slot under the pointer, which is the one being clicked. */
     @Nullable
-    private static Integer hoveredSlot(Object screen) {
-        try {
-            java.lang.reflect.Field field = hoveredSlotField;
-            if (field == null) {
-                // The screen keeps this as a protected field, so it is searched for up the hierarchy
-                // and read reflectively: a name that changes costs the slot number, nothing more.
-                for (Class<?> type = screen.getClass(); type != null; type = type.getSuperclass()) {
-                    try {
-                        field = type.getDeclaredField("hoveredSlot");
-                        field.setAccessible(true);
-                        break;
-                    } catch (NoSuchFieldException ignored) {
-                        // Keep looking in the superclass.
-                    }
-                }
-                if (field == null) {
-                    return null;
-                }
-                hoveredSlotField = field;
-            }
-            Object slot = field.get(screen);
-            if (slot instanceof Slot gameSlot) {
-                return gameSlot.index;
-            }
-        } catch (Throwable ignored) {
-            // Not readable in this version; the movements are still recorded.
-        }
-        return null;
+    private static Integer hoveredSlot(AbstractContainerScreen<?> screen) {
+        Slot slot = ((com.moulberry.flashback.mixin.gui.AbstractContainerScreenAccessor) screen).flashback$getHoveredSlot();
+        return slot == null ? null : slot.index;
     }
 
     /**

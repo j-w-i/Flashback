@@ -7,6 +7,7 @@
     "MixinLanguageManager",
     "MixinDebugScreenOverlay",
     "MixinLevelRenderer",
+    "gui.AbstractContainerScreenAccessor",
     "gui.MixinAbstractContainerScreen",
     "gui.MixinMinecraftGuiRecorder",
     "gui.MixinScreenGuiRecorder",
