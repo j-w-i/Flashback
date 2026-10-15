@@ -65,3 +65,15 @@ Replays are played by Flashback's own `ReplayServer`, so the emulator's join hoo
 ### Still to do
 Other eras (Alpha/Infdev/Release 1.8.x), relocated elements for other versions, hunger-less eras on multiplayer/LAN, cuts, orbit
 camera, undo/redo, audio, other containers, export queue, creator-facing UI polish, GUI capture cleanup, render optimisation.
+
+
+### Headless check suites on 1.21.1 (`devtools/checks/run.sh`) - 19/19 pass
+Runner fixes (it was written for 26.3 and picked wrong jars): game jar chosen from `gradle.properties`' `minecraft_version`;
+foreign game jars (26.3 loom cache, PrismLauncher `com/mojang/minecraft/*`) and duplicate/signed Fabric API jars from `modules-2`
+removed from the classpath; DFU/brigadier pinned to the 1.21.1 versions; `JAVA_HOME` no longer hard-coded.
+Suite adaptations (each is a SKIP or an alternative assertion, never a weakened 1.21.1 check): `Timer.advanceTime(long,boolean)`;
+time-sync override is `synchronizeTime(ServerLevel)`; the AFK `FramerateLimitTracker`, the render-state extractor stage and the
+remote-player hand state do not exist on 1.21.1; weather animation clock substitution is 26.x-only (1.21.1 animates from
+`LevelRenderer.ticks`) - weather needs a playtest, not source inspection; overlay uses `Screen.renderWithTooltip`.
+GUI capture cleanup: reflective hovered-slot search -> typed `AbstractContainerScreenAccessor`; removed `GuiPlayback.shouldShow()`
+(a pure alias of `enabled()`), duplicated/orphaned javadoc blocks. Container record -> replay playback re-verified in game.

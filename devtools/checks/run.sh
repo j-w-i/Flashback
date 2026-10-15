@@ -9,7 +9,7 @@
 # Some of them need a stand-in for the game client, which is in stubs/.
 set -e
 cd "$(dirname "$0")/../.."
-export JAVA_HOME="/Library/Java/JavaVirtualMachines/jdk-25.0.2.jdk/Contents/Home"
+export JAVA_HOME="${JAVA_HOME:-$(/usr/libexec/java_home 2>/dev/null)}"
 
 # The game ships one Gson; a development cache may hold an older one, and picking that mismatches the
 # library the tests are built against. The game's own copy wins, and the newest of those at that.
@@ -20,10 +20,18 @@ if [ -n "$GSON_DIR" ]; then
 else
     GSON=$(ls -d ~/.gradle/caches/modules-2/files-2.1/com.google.code.gson/gson/*/*/gson-*.jar 2>/dev/null | head -1)
 fi
-MC=$(ls .gradle/loom-cache/minecraftMaven/net/minecraft/minecraft-merged-*/*/minecraft-merged-*.jar 2>/dev/null | head -1)
-LIBS=$(find ~/.gradle/caches/modules-2 ~/.gradle/caches/fabric-loom .gradle/loom-cache \
+# The game jar for the version in gradle.properties (a checkout can hold several), not just whichever sorts first.
+MC_VERSION=$(sed -n 's/^minecraft_version=//p' gradle.properties)
+MC=$(ls .gradle/loom-cache/minecraftMaven/net/minecraft/minecraft-merged-*/"$MC_VERSION"*/minecraft-merged-*.jar 2>/dev/null | head -1)
+# The editor imports the relocated imgui.moulberry90 package, which only this binding provides on every game version.
+IMGUI=deps/imgui-binding-1.90.0.jar
+# Libraries that differ between game versions are taken from the version this build targets, first on the path, so a
+# stale copy left by another version in the shared Gradle cache cannot shadow them.
+if [ "$MC_VERSION" = "1.21.1" ]; then DFU_PREF=8.0.16; BRIGADIER_PREF=1.3.10; else DFU_PREF=10.0.21; BRIGADIER_PREF=1.3.11; fi
+PREF=$(find ~/.gradle/caches/modules-2 -name "datafixerupper-$DFU_PREF.jar" -o -name "brigadier-$BRIGADIER_PREF.jar" 2>/dev/null | tr '\n' ':')
+LIBS=$PREF$(find ~/.gradle/caches/modules-2 .gradle/loom-cache \
     "$HOME/Library/Application Support/PrismLauncher/libraries" \
-    -name '*.jar' 2>/dev/null | grep -v sources | tr '\n' ':')
+    -name '*.jar' 2>/dev/null | grep -v sources | grep -v "modules-2/files-2.1/net.fabricmc.fabric-api/" | grep -v "minecraft-merged" | grep -v "/com/mojang/minecraft/" | tr '\n' ':')
 
 OUT=devtools/checks/out
 rm -rf "$OUT"
@@ -33,11 +41,11 @@ find devtools/checks/stubs -name '*.java' > "$OUT/stub-sources.txt"
 find devtools/checks/src -name '*.java' > "$OUT/sources.txt"
 
 SLF4J=$(ls -d ~/.gradle/caches/modules-2/files-2.1/org.slf4j/slf4j-api/*/*/slf4j-api-*.jar 2>/dev/null | head -1)
-CP="build/classes/java/main:deps/imgui-binding-1.90.0.jar:$GSON:$SLF4J:$MC"
+CP="build/classes/java/main:$IMGUI:$GSON:$SLF4J:$PREF$MC"
 "$JAVA_HOME/bin/javac" -nowarn -cp "$CP" -d "$OUT/stubs" @"$OUT/stub-sources.txt"
 "$JAVA_HOME/bin/javac" -nowarn -cp "$OUT/stubs:$CP:$LIBS" -d "$OUT/classes" @"$OUT/sources.txt"
 
-RUN="$OUT/stubs:$OUT/classes:build/classes/java/main:deps/imgui-binding-1.90.0.jar:$GSON:$SLF4J:$MC:$LIBS"
+RUN="$OUT/stubs:$OUT/classes:build/classes/java/main:$IMGUI:$GSON:$SLF4J:$PREF$MC:$LIBS"
 failures=0
 
 # A suite reports itself with an exit status and ends with a one-line summary. Piping into tail to

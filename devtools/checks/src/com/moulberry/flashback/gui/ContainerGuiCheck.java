@@ -136,8 +136,9 @@ public class ContainerGuiCheck {
         String display = Files.readString(root.resolve("com/moulberry/flashback/gui/GuiDisplay.java"));
         check("the overlay draws the game's own screen", display.contains("ScreenConstructor"));
         check("the overlay asks for the screen's background as well as its contents",
-            display.contains("extractRenderStateWithTooltipAndSubtitles")
-                && !display.contains(".extractRenderState(graphics"));
+            // 26.x: extractRenderStateWithTooltipAndSubtitles; 1.21.1: Screen.renderWithTooltip (draws background + contents).
+            (display.contains("extractRenderStateWithTooltipAndSubtitles") && !display.contains(".extractRenderState(graphics"))
+                || (display.contains(".renderWithTooltip(graphics") && !display.contains(".render(graphics,")));
 
         for (String forbidden : List.of("setScreenAndShow", ".setScreen(", "MenuScreens.create",
             "initializeContents", ".removed(", "player.containerMenu")) {
@@ -247,13 +248,14 @@ public class ContainerGuiCheck {
         // believing the client has something it was never sent.
         String contentHandler = methodBody(handler, "handleContainerContent");
         check("container-zero content also restores the HUD inventory",
-            contentHandler != null && contentHandler.contains("packet.containerId() == 0")
+            contentHandler != null
+                && (contentHandler.contains("packet.containerId() == 0") || contentHandler.contains("packet.getContainerId() == 0"))
                 && contentHandler.contains("mirrorOwnInventory(i,"));
         String slotHandler = methodBody(handler, "handleContainerSetSlot");
         check("the container slot handler was found", slotHandler != null);
         if (slotHandler != null) {
             int mirror = slotHandler.indexOf("mirrorOwnInventory(");
-            int gate = slotHandler.indexOf("GuiPlayback.shouldShow()");
+            int gate = slotHandler.indexOf("GuiPlayback.enabled()");
             check("the inventory is mirrored before the interface is gated",
                 mirror >= 0 && gate >= 0 && mirror < gate);
         }
@@ -361,6 +363,11 @@ public class ContainerGuiCheck {
 
         String extractor = Files.readString(root.resolve("com/moulberry/flashback/mixin/MixinLevelExtractor.java"));
         String extract = methodBody(extractor, "extractPlayerState");
+        if (extract == null && extractor.contains("no extraction mixin")) {
+            // 1.21.1 draws the hand through ItemInHandRenderer (MixinItemInHandRenderer/MixinGameRenderer); nothing to inspect here.
+            System.out.println("SKIP: first-person extraction stage does not exist in this game version");
+            return;
+        }
         check("the first-person extraction was found", extract != null);
         if (extract != null) {
             check("a spectate frame with no live player draws no hand",
@@ -384,6 +391,7 @@ public class ContainerGuiCheck {
 
         String hud = Files.readString(root.resolve("com/moulberry/flashback/mixin/visuals/MixinHud.java"));
         String hotbar = methodBody(hud, "extractHotbarAndDecorations");
+        if (hotbar == null) hotbar = methodBody(hud, "renderHotbarAndDecorations"); // 1.21.1 name
         check("the hotbar extraction was found", hotbar != null);
         if (hotbar != null) {
             check("the hotbar is not drawn on a camera that is not through a player",
@@ -407,6 +415,10 @@ public class ContainerGuiCheck {
     private static void freshWatchedPlayersStartWithASettledHand(Path root) throws Exception {
         String remotePlayer = Files.readString(root.resolve("com/moulberry/flashback/mixin/playback/MixinRemotePlayer.java"));
         String initialize = methodBody(remotePlayer, "flashback$initializeFirstPersonHandState");
+        if (initialize == null && !remotePlayer.contains("flashback$extractFirstPersonHandsAndItems")) {
+            System.out.println("SKIP: remote-player hand state is rendered by ItemInHandRenderer in this game version");
+            return;
+        }
         check("the hand state initializer was found", initialize != null);
         if (initialize != null) {
             check("new remote-player instances start with their current held items",
@@ -427,6 +439,10 @@ public class ContainerGuiCheck {
 
     private static void handYawStaysOnSameTurnAsCamera(Path root) throws Exception {
         String source = Files.readString(root.resolve("com/moulberry/flashback/mixin/playback/MixinRemotePlayer.java"));
+        if (!source.contains("flashback$extractFirstPersonHandsAndItems")) {
+            System.out.println("SKIP: hand yaw state is not extracted in this game version");
+            return;
+        }
         check("hand yaw animation rebases across the 180-degree seam",
             source.contains("this.yBobO = yaw + Mth.wrapDegrees(this.yBob - yaw)"));
         String extraction = methodBody(source, "flashback$extractFirstPersonHandsAndItems");
