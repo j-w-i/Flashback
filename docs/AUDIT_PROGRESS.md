@@ -124,3 +124,10 @@ back, 0 dark frames. (A paused dev `seek` initially did not re-evaluate camera k
 ### Spectate camera cut verified end to end (`/flashback dev spectatecam`)
 Replay of the armoured Beta 1.7.3 session, opened from a modern world, spectate camera + cut at tick 0, exported 1080p60 (432 frames, 0 dark
 frames): first-person hand, hearts only, armour relocated to the right of the hearts, no hunger bar, no XP bar, no tutorial toast.
+
+### Second era verified: Release 1.6.4 (hunger + XP) - the opposite case to Beta 1.7.3
+World `EraRel` (`level-type=historical_experience:release_1_6_4`, rules: hunger=true xp=true). Recorded armoured session -> metadata
+`version_emulator: release_1_6_4` -> replayed from a modern world, spectate camera, 1080p export (525 frames, 0 dark): hearts + hunger
+drumsticks + XP bar all drawn, armour in the modern position above the hearts. Together with Beta 1.7.3 (hearts only, armour relocated
+right) this confirms the era is captured in both directions. The emulator defines 32 versions; hunger/xp are off for Alpha, Infdev, Beta
+1.0-1.7.3 and on for Beta 1.8+ and Releases 1.0+ - the others were not individually recorded but use the same stored-version path.
