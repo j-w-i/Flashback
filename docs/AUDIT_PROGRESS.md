@@ -248,3 +248,10 @@ in `GuiDisplay.render`: flush the HUD batch and clear depth before `renderWithTo
 1080p export frame with the crafting panel open.
 Also verified one-era-per-replay on three more versions (record in an upgraded world, replay from a modern one): Infdev 420 ("Minecraft Infdev" label, Alpha stack),
 Beta 1.3 (Beta stack), Release 1.5 (Release stack). Eras with recorded evidence: Alpha 1.0.17, Infdev 420, Beta 1.3, Beta 1.7.3, Release 1.0.0, 1.5, 1.6.4.
+
+### Editor UI: one-click export presets
+The export window opens with a "Quick Presets" row: 1080p60 (MP4, 20 Mbps), 4K60 (60 Mbps), Vertical 1080x1920 (16 Mbps, Shorts/Reels/TikTok), Quick Draft
+720p30 (8 Mbps). Each sets resolution, frame rate, container and bitrate together (codec/encoder back to the container default, "maximum bitrate" off) and leaves
+the range, audio and projection alone. Each has a tooltip stating exactly what it sets. Verified with real mouse clicks in the live editor: 4K60 -> 3840x2160 / 60 / 60m,
+Vertical -> 1080x1920 / 60 / 16m. The result summary below updates with the new numbers. Beta 1.3 and Release 1.5 replay frames reviewed: Beta label + Beta stack
+with armour row; Release HUD with hunger and XP.

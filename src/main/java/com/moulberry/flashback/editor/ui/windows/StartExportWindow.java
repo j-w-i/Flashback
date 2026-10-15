@@ -141,6 +141,8 @@ public class StartExportWindow {
 
             FlashbackConfigV1 config = Flashback.getConfig();
 
+            renderQuickPresets(config);
+
             ImGuiHelper.separatorWithText(I18n.get("flashback.capture_options"));
 
             ImGuiHelper.inputInt(I18n.get("flashback.resolution"), config.internalExport.resolution);
@@ -398,6 +400,47 @@ public class StartExportWindow {
             ImGui.popTextWrapPos();
         }
         // Codecs that ignore a bitrate show nothing here rather than a control that does nothing.
+    }
+
+    /**
+     * One-click starting points for the settings people ask for by purpose rather than by codec: they set resolution,
+     * frame rate, container and bitrate together and leave everything else (range, audio, projection) as it was.
+     */
+    private static void renderQuickPresets(FlashbackConfigV1 config) {
+        ImGuiHelper.separatorWithText(I18n.get("flashback.quick_presets"));
+        float width = (ImGui.getContentRegionAvailX() - ImGui.getStyle().getItemSpacingX() * 3) / 4f;
+        if (ImGui.button(I18n.get("flashback.preset.youtube") + "##preset", width, 0)) {
+            applyPreset(config, 1920, 1080, 60f, VideoContainer.MP4, "20m");
+        }
+        ImGuiHelper.tooltip(I18n.get("flashback.preset.youtube_tooltip"));
+        ImGui.sameLine();
+        if (ImGui.button(I18n.get("flashback.preset.youtube_4k") + "##preset", width, 0)) {
+            applyPreset(config, 3840, 2160, 60f, VideoContainer.MP4, "60m");
+        }
+        ImGuiHelper.tooltip(I18n.get("flashback.preset.youtube_4k_tooltip"));
+        ImGui.sameLine();
+        if (ImGui.button(I18n.get("flashback.preset.vertical") + "##preset", width, 0)) {
+            applyPreset(config, 1080, 1920, 60f, VideoContainer.MP4, "16m");
+        }
+        ImGuiHelper.tooltip(I18n.get("flashback.preset.vertical_tooltip"));
+        ImGui.sameLine();
+        if (ImGui.button(I18n.get("flashback.preset.quick") + "##preset", width, 0)) {
+            applyPreset(config, 1280, 720, 30f, VideoContainer.MP4, "8m");
+        }
+        ImGuiHelper.tooltip(I18n.get("flashback.preset.quick_tooltip"));
+    }
+
+    private static void applyPreset(FlashbackConfigV1 config, int width, int height, float framerate,
+                                    VideoContainer container, String bitrateText) {
+        var export = config.internalExport;
+        export.resolution[0] = width;
+        export.resolution[1] = height;
+        export.framerate[0] = framerate;
+        export.container = container;
+        export.videoCodec = null; // the container's first supported codec, as the window picks by default
+        export.selectedVideoEncoder = null;
+        export.useMaximumBitrate = false;
+        bitrate.set(bitrateText);
     }
 
     /** The ticks an export would cover: the chosen range, else the keyframed range, else the whole replay. */
