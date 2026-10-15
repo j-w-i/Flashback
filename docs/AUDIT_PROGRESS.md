@@ -131,3 +131,9 @@ World `EraRel` (`level-type=historical_experience:release_1_6_4`, rules: hunger=
 drumsticks + XP bar all drawn, armour in the modern position above the hearts. Together with Beta 1.7.3 (hearts only, armour relocated
 right) this confirms the era is captured in both directions. The emulator defines 32 versions; hunger/xp are off for Alpha, Infdev, Beta
 1.0-1.7.3 and on for Beta 1.8+ and Releases 1.0+ - the others were not individually recorded but use the same stored-version path.
+
+### Beta 1.7.3 long session with a container (answers "does Beta record properly")
+Recorded 1799 ticks (~90 s) in `EraBeta` including opening a chest: metadata `version_emulator: beta_1_7_3`, zip intact. Replayed from a
+modern world and scanned 12 points across the clip: the Chest + Inventory screen is drawn at tick ~1150 (and the chest block is visible
+before/after), and the Beta HUD (hearts only, armour relocated) stays correct throughout. Not covered: clicking items inside the chest,
+furnaces/crafting tables, or Beta containers whose layout differs from the modern screens.
