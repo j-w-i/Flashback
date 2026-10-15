@@ -448,6 +448,11 @@ public final class GuiDisplay {
             }
             // Far outside the interface, so nothing counts as hovered and no tooltip is drawn: this
             // is a picture, and there is no pointer in it.
+            // A real screen is drawn after the HUD with the depth buffer cleared, so its darkened background lies over
+            // everything beneath it - the hotbar and health included. Drawn into the same depth as the HUD, the
+            // hotbar's items sat in front of the dimming and stayed bright beside a darkened world.
+            graphics.flush();
+            com.mojang.blaze3d.systems.RenderSystem.clear(256, Minecraft.ON_OSX);
             drawing.renderWithTooltip(graphics, -1, -1, 0.0f);
         } catch (Throwable t) {
             Flashback.LOGGER.warn("Could not draw the recorded container {}", menuType, t);

@@ -240,3 +240,11 @@ world (now that era), record the standard session (crafting table, chest, surviv
   hunger bar, no XP bar, Alpha chest/crafting table, Alpha crafting screen. A 1080p60 export of it (1521 frames, 1920x1080) keeps all of that and has 0 dark frames of
   305 sampled.
 - Eras with recorded + replayed evidence now: Beta 1.7.3, Release 1.0.0, Release 1.6.4, Alpha 1.0.17.
+
+### Hotbar now dims with the background when a recorded container is open
+Reported: in a replay the hotbar stayed bright while the world behind a container screen was darkened. Cause: the replayed screen was drawn in the HUD pass without
+clearing depth, so the hotbar's item sprites (drawn at a higher z) sat in front of the screen's dimming. A real screen is drawn after the HUD with depth cleared. Fix
+in `GuiDisplay.render`: flush the HUD batch and clear depth before `renderWithTooltip`. Verified live (hotbar, hearts, armour, food and XP bar all dimmed) and in a
+1080p export frame with the crafting panel open.
+Also verified one-era-per-replay on three more versions (record in an upgraded world, replay from a modern one): Infdev 420 ("Minecraft Infdev" label, Alpha stack),
+Beta 1.3 (Beta stack), Release 1.5 (Release stack). Eras with recorded evidence: Alpha 1.0.17, Infdev 420, Beta 1.3, Beta 1.7.3, Release 1.0.0, 1.5, 1.6.4.
