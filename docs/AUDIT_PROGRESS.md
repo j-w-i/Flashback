@@ -255,3 +255,22 @@ The export window opens with a "Quick Presets" row: 1080p60 (MP4, 20 Mbps), 4K60
 the range, audio and projection alone. Each has a tooltip stating exactly what it sets. Verified with real mouse clicks in the live editor: 4K60 -> 3840x2160 / 60 / 60m,
 Vertical -> 1080x1920 / 60 / 16m. The result summary below updates with the new numbers. Beta 1.3 and Release 1.5 replay frames reviewed: Beta label + Beta stack
 with armour row; Release HUD with hunger and XP.
+
+### Render optimisation, round 2: a heavy entity scene (130 armoured villagers + 130 armoured stands, 1385 frames, h264_videotoolbox)
+| | total | render | sws_scale thread | encode thread |
+|---|---|---|---|---|
+| 1080p60 | 11.0 ms/frame (15.3 s) | 10.7 s | 3.2 s | 0.3 s |
+| 4K60 | 16.4 ms/frame (22.8 s) | 11.1 s | 14.1 s | 20.7 s |
+| 4K60 + SSAA | 16.5 ms/frame | 11.4 s | 14.5 s | 19.3 s |
+Compared with the light scene (1080p 4.4 ms/frame, render 1.3 ms/frame) the heavy scene is **render-bound at 1080p** (render ~7.7 ms/frame) and flips to
+encoder-bound at 4K, where the encoder (~15 ms/frame) again hides the render cost, and SSAA costs nothing extra. So 4K wall time is set by VideoToolbox, 1080p
+wall time by rendering. Sampling the render thread's stack during a 1080p export (60 `jstack` samples): 36 in entity rendering (`ModelPart.compile` /
+`LivingEntityRenderer`, from vanilla's per-bone model compile) and 20 in Flashback's own export code (readback/blit), 1 in terrain. The entity cost is vanilla's per-entity model
+submission and scales with the number of entities in view; Flashback adds nothing to it. No Flashback-side change was made, because the measurable cost is in vanilla's
+entity renderers; the practical lever for creators is the Render Filter (hide entities) and fewer visible entities in the shot.
+Dev tooling: `/flashback dev resolution <w> <h> <ssaa>`; per-phase timing is in the `Export timing` and `Writer timing` log lines.
+
+### Export presets verified end to end
+Real mouse click on Quick Draft in the export window (after closing the leftover "Export has successfully finished" popup, which swallows clicks while open): fields
+become 1280x720 / 30 / 8m; the following export is 1280x720, 30 fps, 694 frames, 23.1 s, ~10 MB (vs 32 MB for the 1080p60 export of the same range).
+Test-tool lesson: `devtools/mac/input` takes screen *points*, not screenshot pixels (the Retina screenshot is 1.7x larger), and the game window must be frontmost.
