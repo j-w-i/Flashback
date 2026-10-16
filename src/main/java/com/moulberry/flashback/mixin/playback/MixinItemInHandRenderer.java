@@ -142,44 +142,67 @@ public abstract class MixinItemInHandRenderer implements ItemInHandRendererExt {
     @Unique
     private UUID lastSpectatingPlayer = null;
 
+    @Unique
+    private int lastReplayTick = Integer.MIN_VALUE;
+
+    /**
+     * Keeps the first-person hand on the player being watched.
+     *
+     * <p>Vanilla raises the hand towards {@code attackStrength^3}, so a hand that is still on its cooldown sits low or
+     * is hidden. That is right for a live player, whose cooldown runs down as they play, but a replayed player is
+     * created fresh with a cooldown near zero and it only recovers while the replay ticks - so after a seek, or while
+     * paused, the hand and the item in it were simply missing, for as long as the replay was held there. The recording
+     * cannot reproduce the cooldown dips anyway (the attacks happened on another machine), so the hand's height follows
+     * only whether the held item has changed, which keeps the lower-and-raise animation for a swap.
+     *
+     * <p>When the replay jumps in time the hand is not animated from wherever it was: the item the player holds at the
+     * new moment is shown straight away.
+     */
     @Inject(method = "tick", at = @At("HEAD"), cancellable = true)
     public void tick(CallbackInfo ci) {
         AbstractClientPlayer spectatingPlayer = Flashback.getSpectatingPlayer();
         if (spectatingPlayer == null) {
             this.lastSpectatingPlayer = null;
-        } else {
-            ItemStack newMainHandItem = spectatingPlayer.getMainHandItem();
-            ItemStack newOffHandItem = spectatingPlayer.getOffhandItem();
-
-            if (!spectatingPlayer.getUUID().equals(lastSpectatingPlayer)) {
-                this.lastSpectatingPlayer = spectatingPlayer.getUUID();
-                this.mainHandItem = newMainHandItem;
-                this.offHandItem = newOffHandItem;
-                this.oMainHandHeight = this.mainHandHeight = 1.0f;
-                this.oOffHandHeight = this.offHandHeight = 1.0f;
-                ci.cancel();
-                return;
-            }
-
-            this.oMainHandHeight = this.mainHandHeight;
-            this.oOffHandHeight = this.offHandHeight;
-            if (ItemStack.matches(this.mainHandItem, newMainHandItem)) {
-                this.mainHandItem = newMainHandItem;
-            }
-            if (ItemStack.matches(this.offHandItem, newOffHandItem)) {
-                this.offHandItem = newOffHandItem;
-            }
-            float str = spectatingPlayer.getAttackStrengthScale(1.0f);
-            this.mainHandHeight += Mth.clamp((this.mainHandItem == newMainHandItem ? str * str * str : 0.0f) - this.mainHandHeight, -0.4f, 0.4f);
-            this.offHandHeight += Mth.clamp((float)(this.offHandItem == newOffHandItem ? 1 : 0) - this.offHandHeight, -0.4f, 0.4f);
-            if (this.mainHandHeight < 0.1f) {
-                this.mainHandItem = newMainHandItem;
-            }
-            if (this.offHandHeight < 0.1f) {
-                this.offHandItem = newOffHandItem;
-            }
-            ci.cancel();
+            this.lastReplayTick = Integer.MIN_VALUE;
+            return;
         }
+
+        ItemStack newMainHandItem = spectatingPlayer.getMainHandItem();
+        ItemStack newOffHandItem = spectatingPlayer.getOffhandItem();
+
+        var replayServer = Flashback.getReplayServer();
+        int replayTick = replayServer == null ? Integer.MIN_VALUE : replayServer.getReplayTick();
+        boolean jumped = replayTick != Integer.MIN_VALUE && this.lastReplayTick != Integer.MIN_VALUE
+            && (replayTick < this.lastReplayTick || replayTick - this.lastReplayTick > 3);
+        this.lastReplayTick = replayTick;
+
+        if (jumped || !spectatingPlayer.getUUID().equals(this.lastSpectatingPlayer)) {
+            this.lastSpectatingPlayer = spectatingPlayer.getUUID();
+            this.mainHandItem = newMainHandItem;
+            this.offHandItem = newOffHandItem;
+            this.oMainHandHeight = this.mainHandHeight = 1.0f;
+            this.oOffHandHeight = this.offHandHeight = 1.0f;
+            ci.cancel();
+            return;
+        }
+
+        this.oMainHandHeight = this.mainHandHeight;
+        this.oOffHandHeight = this.offHandHeight;
+        if (ItemStack.matches(this.mainHandItem, newMainHandItem)) {
+            this.mainHandItem = newMainHandItem;
+        }
+        if (ItemStack.matches(this.offHandItem, newOffHandItem)) {
+            this.offHandItem = newOffHandItem;
+        }
+        this.mainHandHeight += Mth.clamp((this.mainHandItem == newMainHandItem ? 1.0f : 0.0f) - this.mainHandHeight, -0.4f, 0.4f);
+        this.offHandHeight += Mth.clamp((this.offHandItem == newOffHandItem ? 1.0f : 0.0f) - this.offHandHeight, -0.4f, 0.4f);
+        if (this.mainHandHeight < 0.1f) {
+            this.mainHandItem = newMainHandItem;
+        }
+        if (this.offHandHeight < 0.1f) {
+            this.offHandItem = newOffHandItem;
+        }
+        ci.cancel();
     }
 
 }

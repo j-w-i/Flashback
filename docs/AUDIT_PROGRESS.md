@@ -274,3 +274,16 @@ Dev tooling: `/flashback dev resolution <w> <h> <ssaa>`; per-phase timing is in 
 Real mouse click on Quick Draft in the export window (after closing the leftover "Export has successfully finished" popup, which swallows clicks while open): fields
 become 1280x720 / 30 / 8m; the following export is 1280x720, 30 fps, 694 frames, 23.1 s, ~10 MB (vs 32 MB for the 1080p60 export of the same range).
 Test-tool lesson: `devtools/mac/input` takes screen *points*, not screenshot pixels (the Retina screenshot is 1.7x larger), and the game window must be frontmost.
+
+### BUG FIXED: the first-person hand and held item missing in spectate playback
+Reported: "a lot of the time the hands don't render, nor the items" when watching as the recorded player. Reproduced with the dev status field `spectatedAttackScale`:
+a replayed player is created fresh, so `Player.getAttackStrengthScale` starts near 0 (0.08 at tick 0) and only recovers while replay ticks run. The spectate hand
+logic (`MixinItemInHandRenderer.tick`) raised the hand toward `attackStrength^3`, so whenever the replay was paused or just seeked near the start (every freshly
+opened replay, every scrub to the beginning) the hand sat at height ~0 - arm and item hidden - until playback ran for a second or so; that is "a lot of the time".
+A second contributor: after a seek the hand animated from wherever it was instead of showing the item the player holds at the new time.
+Fix: the hand height now ignores the attack cooldown (the recording cannot reproduce it anyway) and follows only whether the held item changed, so a swap still
+lowers and raises; any jump in replay time (backwards, or more than 3 ticks) snaps the hand to the player's current items. Verified with the same dev status
+field and screenshots: tick 0, 1, 2, 3 paused after seeks all show the sword; random rapid scrubs show the correct item for the slot; a mining recording plays with
+the pickaxe visible and swinging while breaking stone, and the swap to the sword at the end appears. New dev status fields: `spectatedAttackScale`, `spectatedMainHand`.
+Build environment settled: JDK 21 (Temurin) installed under `~/Library/Java/JavaVirtualMachines` and registered in `~/.gradle/gradle.properties`, so the emulator's
+`java.toolchain` pin builds unmodified and its working tree is clean (no local edits left). Run gradle with `sh ./gradlew` (the emulator's wrapper is not executable).

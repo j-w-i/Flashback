@@ -521,6 +521,11 @@ public final class FlashbackDevCommands {
             o.addProperty("pitch", mc.player.getXRot());
         }
         o.addProperty("recording", Flashback.RECORDER != null);
+        if (Flashback.getSpectatingPlayer() != null) {
+            var viewed = Flashback.getSpectatingPlayer();
+            o.addProperty("spectatedAttackScale", viewed.getAttackStrengthScale(1.0f));
+            o.addProperty("spectatedMainHand", net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(viewed.getMainHandItem().getItem()).toString());
+        }
         if (mc.getCameraEntity() != null) {
             o.addProperty("cameraEntity", mc.getCameraEntity().getName().getString());
             o.addProperty("cameraIsViewer", mc.getCameraEntity() == mc.player);
