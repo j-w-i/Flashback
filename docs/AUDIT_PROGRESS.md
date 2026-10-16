@@ -337,3 +337,12 @@ Same pipeline, one era per world:
 Release 1.2.5's first pass recorded no container at all (the open never happened in that session - visible as an empty `container.state` at record time and four frames with no panel);
 it was re-run and captured the crafting table and chest normally. Lesson: check the record-time `container.state` output, not just the replay.
 Eras with recorded and replayed evidence: 14 of 33 - Alpha 1.0.17, Alpha 1.2.0, Infdev 420, Infdev 611, Beta 1.3, 1.6, 1.7.3, 1.8.1, Beta 1.9-pre-3, Release 1.0.0, 1.1, 1.2.5, 1.5, 1.6.4. The rest differ only in assets/gameplay details from these and are covered by the state/gate check.
+
+### Exports of a recorded container verified (and a measurement trap recorded)
+With a spectate camera cut at tick 0 (the cut the exporter follows, since during export the camera entity is the viewer's own player and
+`GuiDisplay.showingThroughAPlayer` falls back to the cut's kind), a 1080p export of the enchanting replay has the Enchant screen in the frames: at 4 s with the sword
+still in the hotbar, at 6 s with the sword and lapis in the table, and from 8 s on with the enchanted sword (glint) and lapis 8. The export path was traced
+(`GuiDisplay.handle` receives OPEN/CONTENT at tick 62 and `render` runs with `screen=true through=true` for the rest of the window), so nothing was changed for it.
+**Measurement trap, worth keeping:** counting container frames by matching the panel grey exactly (198,198,198) works on a lossless screenshot and fails on an
+H.264 frame from an export - the colour shifts by a few units and the count comes out zero. Judge exported containers by looking at the frames; do not use an
+equality test on an encoded colour.
