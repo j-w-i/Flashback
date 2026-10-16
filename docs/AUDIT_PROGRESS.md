@@ -356,3 +356,19 @@ Fix (`TimelineWindow`): a drag now asks for a live position at most every 150 ms
 Checked by `devtools/checks` suite `TimelineSeekThrottleCheck` (registered in `run.sh`); all suites pass.
 **Not fixed, and the real limit:** the cost of one seek is still proportional to the distance from the chunk start (up to five minutes of replay). Making scrubbing genuinely cheap needs more frequent snapshots - either written by the recorder inside a chunk (a format and reader change) or cached in memory during playback - which is its own piece of work.
 Measurement note for later: the trace used a system property, `-Dflashback.tracePlayback`, and was removed once the numbers were in. Timing a bridge round trip is too coarse for this: the status file plus the chat round trip hides everything under about a second, which is why the first attempts showed "no problem".
+
+### Camera objects in the world: one bug found and fixed, one still open
+Reported: the green wireframe rectangles that show camera keyframes are either invisible or appear stuck to the free camera, i.e. not placed in world space.
+Reproduced with a new dev command `/flashback dev camkeys`, which puts position and rotation keyframes on the timeline's own (free camera) tracks at ticks 0, mid and end without cutting to a camera, so the free camera stays active and its path can be looked at from outside.
+
+**Fixed: every camera object was drawn 1.62 blocks too high.** `Camera.setup` builds the camera position as the entity position *plus the eye height* (verified in the 1.21.1 bytecode: `Mth.lerp(partialTick, entity.yo, entity.getY())` then a second lerp of `eyeHeightOld`/`eyeHeight` in the same expression), so `camera.getPosition()` is already the eye position. `CameraPath` then added `camera.eyeHeight` again when translating the path geometry into camera space. Measured directly: with the camera stationary (`base == camera position`) the trace showed the drawn pose's translation as `R * (0, 1.62, 0)` - a pure 1.62-block offset that should have been zero. Removed, so the objects now sit where the keyframe is.
+
+**Still open: the objects do not produce any pixels at all.** Everything up to the draw is verified working, so the fault is in the draw itself, not the geometry or the placement:
+- the hook runs with the editor active, the visual on and `hideGui` false;
+- the mesh is built: 7212 vertices for `args=[last=0, next=889, nextNext=1779]`;
+- the draw is executed every frame (3268 times in one run), with shader `rendertype_lines` and `glGetError() == 0`;
+- the matrices are the intended ones: projection is a normal level perspective (m00 0.80, m11 1.43, m22 -1, m23 -1) and the modelview equals the pose built in `CameraPath` (its translation matched the pose's exactly);
+- it is not depth occlusion: with `RenderSystem.disableDepthTest()` around the draw the frame came out byte-identical;
+- the transform convention itself is right: the `modelView` argument of `LevelRenderer.renderLevel` is rotation only (1.21.1 builds `new Matrix4f().rotation(camera.rotation().conjugate())` and passes it), and the geometry is `world - basePosition` translated by `basePosition - cameraPosition`, which lands in camera-relative space as intended.
+Next step to try: draw the same geometry through vanilla's own line path at the same point in the frame - `Minecraft.getInstance().renderBuffers().bufferSource().getBuffer(RenderType.lines())` plus `endBatch(RenderType.lines())`, which is how the block outline and the debug renderer draw lines there successfully - instead of the port's custom persistent `FlashbackDrawBuffer`/`VertexBuffer`. If that renders, the fault is in the ported buffer path (`FlashbackDrawBuffer`), which replaced RenderPearl's `RenderPass`/`GpuBuffer` in the 26.x original.
+Test tooling added: `/flashback dev camkeys` (keyframes the timeline camera without cutting to a camera). Temporary tracing used `-Dflashback.traceCameraPath` and has been removed.

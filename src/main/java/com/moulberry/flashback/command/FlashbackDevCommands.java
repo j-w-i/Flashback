@@ -240,6 +240,46 @@ public final class FlashbackDevCommands {
                         return reply(ctx.getSource(), error(String.valueOf(t)));
                     }
                 }))));
+        dev.then(ClientCommandManager.literal("camkeys").executes(ctx -> {
+            // A keyframed camera that the timeline does NOT cut to, so the free camera stays the active one and the
+            // camera objects drawn for the keyframes can be looked at from outside. Built for checking the in-world
+            // camera path visuals, which are otherwise hard to see without clicking keyframes in by hand.
+            EditorState state = EditorStateManager.getCurrent();
+            ReplayServer server = Flashback.getReplayServer();
+            if (state == null || server == null) return reply(ctx.getSource(), error("not in a replay editor"));
+            net.minecraft.world.entity.player.Player recorded = server.recordedPlayer();
+            if (recorded == null) return reply(ctx.getSource(), error("recorded player not present at this tick"));
+            int last = Math.max(20, server.getTotalReplayTicks() - 20);
+            var origin = new org.joml.Vector3d(recorded.getX(), recorded.getY() + 1.0, recorded.getZ());
+            // cameraId stays null: these are the timeline's own (free camera) tracks, which is what the editor's
+            // Add Element creates and what the camera objects are normally made from.
+            var positionTrack = new com.moulberry.flashback.state.KeyframeTrack(
+                com.moulberry.flashback.keyframe.types.CameraPositionKeyframeType.INSTANCE);
+            int[] ticks = {0, last / 2, last};
+            org.joml.Vector3d[] points = {
+                origin.add(6, 2, 0, new org.joml.Vector3d()),
+                origin.add(0, 6, 6, new org.joml.Vector3d()),
+                origin.add(-6, 2, 0, new org.joml.Vector3d())};
+            for (int i = 0; i < ticks.length; i++) {
+                positionTrack.keyframesByTick.put(ticks[i],
+                    new com.moulberry.flashback.keyframe.impl.CameraPositionKeyframe(points[i]));
+            }
+            var rotationTrack = new com.moulberry.flashback.state.KeyframeTrack(
+                com.moulberry.flashback.keyframe.types.CameraRotationKeyframeType.INSTANCE);
+            rotationTrack.keyframesByTick.put(ticks[0], new com.moulberry.flashback.keyframe.impl.CameraRotationKeyframe(0f, 20f, 0f));
+            rotationTrack.keyframesByTick.put(ticks[2], new com.moulberry.flashback.keyframe.impl.CameraRotationKeyframe(180f, 20f, 0f));
+
+            long stamp = state.acquireWrite();
+            try {
+                var scene = state.getCurrentScene(stamp);
+                scene.keyframeTracks.add(positionTrack);
+                scene.keyframeTracks.add(rotationTrack);
+            } finally {
+                state.release(stamp);
+            }
+            state.markDirty();
+            return reply(ctx.getSource(), ok("keyframed camera added at ticks 0, " + (last / 2) + ", " + last + " (not cut to)"));
+        }));
         dev.then(ClientCommandManager.literal("spectatecam").executes(ctx -> {
             try {
                 return addSpectateCamera(ctx.getSource());

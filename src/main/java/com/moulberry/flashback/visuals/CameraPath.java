@@ -95,8 +95,12 @@ public class CameraPath {
         RenderSystem.setShaderColor(1.0f, 1.0f, 1.0f, 1.0f);
 
         poseStack.pushPose();
+        // No eye height here: Camera.setup puts the eye height into the camera's own position
+        // (entity position + eye height), so adding it as well drew every camera object 1.62 blocks
+        // above the place it belongs. The offset only has to undo the camera's movement since the
+        // geometry was built.
         poseStack.translate(basePosition.x - camera.getPosition().x,
-            basePosition.y - camera.getPosition().y + camera.eyeHeight, basePosition.z - camera.getPosition().z);
+            basePosition.y - camera.getPosition().y, basePosition.z - camera.getPosition().z);
 
         Matrix4f oldModelView = new Matrix4f(RenderSystem.getModelViewMatrix());
         RenderSystem.getModelViewMatrix().set(poseStack.last().pose());
