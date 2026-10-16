@@ -76,11 +76,27 @@ public abstract class MixinGameRenderer {
         return Flashback.getSpectatingPlayer() != null ? GameType.SURVIVAL : original.call(gameMode);
     }
 
+    /**
+     * Lights the hand from the player being watched rather than from the viewer.
+     *
+     * <p>Vanilla asks for the light at {@code minecraft.player}, who in a replay is the viewer: in the editor that
+     * is a body sitting wherever the free camera is, which is often inside terrain. The hand was then lit for that
+     * spot instead of for the player whose eyes the shot is through, so a tool held in daylight came out black -
+     * and against a dark tunnel it looked like no hand was drawn at all, while the hotbar and hearts beside it,
+     * which are drawn from the recorded player, looked right.
+     */
+    @WrapOperation(method = "renderItemInHand", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/entity/EntityRenderDispatcher;getPackedLightCoords(Lnet/minecraft/world/entity/Entity;F)I"), require = 0)
+    public int renderItemInHand_lightForWatchedPlayer(net.minecraft.client.renderer.entity.EntityRenderDispatcher dispatcher,
+            net.minecraft.world.entity.Entity entity, float partialTick, Operation<Integer> original) {
+        AbstractClientPlayer watched = Flashback.getFirstPersonPlayer();
+        return original.call(dispatcher, watched != null ? watched : entity, partialTick);
+    }
+
     @WrapOperation(method = "renderItemInHand", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/ItemInHandRenderer;renderHandsWithItems(FLcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource$BufferSource;Lnet/minecraft/client/player/LocalPlayer;I)V"))
     public void renderHandsWithSpectatedPlayer(ItemInHandRenderer renderer, float partialTick, PoseStack poseStack,
                                                MultiBufferSource.BufferSource buffers, LocalPlayer localPlayer, int packedLight,
                                                Operation<Void> original) {
-        AbstractClientPlayer spectatingPlayer = Flashback.getSpectatingPlayer();
+        AbstractClientPlayer spectatingPlayer = Flashback.getFirstPersonPlayer();
         if (spectatingPlayer == null) {
             original.call(renderer, partialTick, poseStack, buffers, localPlayer, packedLight);
             return;

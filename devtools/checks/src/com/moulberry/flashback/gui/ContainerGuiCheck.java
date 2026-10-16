@@ -496,6 +496,13 @@ public class ContainerGuiCheck {
             if (at > 0 && Character.isJavaIdentifierPart(source.charAt(at - 1))) {
                 continue;
             }
+            // A declaration, not a call to it from another method: the line it sits on carries a visibility
+            // modifier, and a call does not.
+            int lineStart = source.lastIndexOf('\n', at) + 1;
+            String line = source.substring(lineStart, at);
+            if (!(line.contains("public ") || line.contains("private ") || line.contains("protected "))) {
+                continue;
+            }
 
             int depth = 0;
             int i = at + name.length();

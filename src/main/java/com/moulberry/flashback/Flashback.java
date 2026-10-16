@@ -1162,6 +1162,35 @@ public class Flashback implements ModInitializer, ClientModInitializer {
         }
     }
 
+    /**
+     * The player whose first-person view is on screen, or null when there is none.
+     *
+     * <p>{@link #getSpectatingPlayer()} answers "whose eyes is the camera in" and returns null when the camera
+     * entity is the viewer's own player or is not a player at all. The interface does not use that answer: it asks
+     * {@code GuiDisplay.showingThroughAPlayer()}, which also says yes when the shot is a spectate camera. That
+     * difference is why the hotbar, hearts and hunger could be drawn while the hands and the held item were not:
+     * the hand pass fell back to the viewer, who holds nothing, and drew their empty hands - or nothing visible at
+     * all - inside somebody else's interface.
+     *
+     * <p>Whenever the first-person pass runs at all, the interface around it is being drawn for the recorded
+     * player, so the recorded player is who those hands belong to.
+     */
+    @Nullable
+    public static AbstractClientPlayer getFirstPersonPlayer() {
+        AbstractClientPlayer spectating = getSpectatingPlayer();
+        if (spectating != null) {
+            return spectating;
+        }
+        if (!isInReplay()) {
+            return null;
+        }
+        Player recorded = com.moulberry.flashback.gui.GuiDisplay.recordedPlayer();
+        if (recorded instanceof AbstractClientPlayer clientPlayer && clientPlayer != Minecraft.getInstance().player) {
+            return clientPlayer;
+        }
+        return null;
+    }
+
     @Nullable
     public static AbstractClientPlayer getSpectatingPlayer() {
         if (!isInReplay()) {
