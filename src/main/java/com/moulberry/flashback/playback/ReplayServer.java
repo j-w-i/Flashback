@@ -595,6 +595,20 @@ public class ReplayServer extends IntegratedServer {
      * during an export - and it leaves the server unaware of the target, so the per-tick repair that
      * copes with the watched entity being replaced never runs.
      */
+    /**
+     * The player the replay has been asked to watch, or null when it has been asked to watch nobody.
+     *
+     * <p>This is the intention, which is what stays still: it is set when a spectate camera is applied or the
+     * "watch as recorded player" toggle is used, and it does not change as the replay destroys and recreates the
+     * entity that represents that player. Anything that has to agree about whose first-person view is on screen -
+     * the hand tick and the hand render, for instance - has to ask this rather than read the camera entity, which
+     * the timeline re-points at the cut's own camera every tick.
+     */
+    @Nullable
+    public UUID getSpectateTarget() {
+        return this.spectateRequestTarget;
+    }
+
     public void setSpectateTarget(@Nullable UUID target) {
         if (java.util.Objects.equals(this.spectateRequestTarget, target)) {
             // The desired target has not changed. Keyframes are applied every tick, so without this

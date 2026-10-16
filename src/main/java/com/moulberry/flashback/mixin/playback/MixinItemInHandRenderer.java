@@ -160,7 +160,7 @@ public abstract class MixinItemInHandRenderer implements ItemInHandRendererExt {
      */
     @Inject(method = "tick", at = @At("HEAD"), cancellable = true)
     public void tick(CallbackInfo ci) {
-        AbstractClientPlayer spectatingPlayer = Flashback.getFirstPersonPlayer();
+        AbstractClientPlayer spectatingPlayer = Flashback.getWatchedPlayer();
         if (spectatingPlayer == null) {
             this.lastSpectatingPlayer = null;
             this.lastReplayTick = Integer.MIN_VALUE;

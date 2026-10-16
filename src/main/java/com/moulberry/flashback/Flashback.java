@@ -1163,30 +1163,52 @@ public class Flashback implements ModInitializer, ClientModInitializer {
     }
 
     /**
-     * The player whose first-person view is on screen, or null when there is none.
+     * The player whose eyes the first-person view is in, or null when the shot is not through a player.
      *
-     * <p>{@link #getSpectatingPlayer()} answers "whose eyes is the camera in" and returns null when the camera
-     * entity is the viewer's own player or is not a player at all. The interface does not use that answer: it asks
-     * {@code GuiDisplay.showingThroughAPlayer()}, which also says yes when the shot is a spectate camera. That
-     * difference is why the hotbar, hearts and hunger could be drawn while the hands and the held item were not:
-     * the hand pass fell back to the viewer, who holds nothing, and drew their empty hands - or nothing visible at
-     * all - inside somebody else's interface.
+     * <p>Neither the camera <em>entity</em> nor the recorded player is the right answer here, and using either
+     * one on its own is what made the hands and the held item come and go:
      *
-     * <p>Whenever the first-person pass runs at all, the interface around it is being drawn for the recorded
-     * player, so the recorded player is who those hands belong to.
+     * <p>The camera entity is not stable. The replay destroys and recreates the entity that represents a player as
+     * it ticks, the timeline re-points the camera at the cut's camera every tick, and the camera is briefly the
+     * viewer or a camera entity between those steps. A hand whose held item was read from the camera entity at the
+     * tick and then drawn for a different player at the render therefore drew the wrong stack - very often the
+     * viewer's, which is empty, so the tool was missing while the hotbar beside it, drawn from the recorded player,
+     * showed it.
+     *
+     * <p>The recorded player is not a substitute either: a shot can be watching somebody else, and a hand drawn
+     * for one player while the camera is on another is a visible desync.
+     *
+     * <p>What does hold still is the intention - which player the replay has been asked to watch, by UUID - so
+     * that is resolved against the current level, and the camera entity is used only as a fallback for the moment
+     * before that intention has been applied to it.
      */
     @Nullable
-    public static AbstractClientPlayer getFirstPersonPlayer() {
-        AbstractClientPlayer spectating = getSpectatingPlayer();
-        if (spectating != null) {
-            return spectating;
-        }
+    public static AbstractClientPlayer getWatchedPlayer() {
         if (!isInReplay()) {
             return null;
         }
-        Player recorded = com.moulberry.flashback.gui.GuiDisplay.recordedPlayer();
-        if (recorded instanceof AbstractClientPlayer clientPlayer && clientPlayer != Minecraft.getInstance().player) {
-            return clientPlayer;
+        Minecraft minecraft = Minecraft.getInstance();
+        if (minecraft.level == null) {
+            return null;
+        }
+
+        UUID target = null;
+        ReplayServer replayServer = getReplayServer();
+        if (replayServer != null) {
+            target = replayServer.getSpectateTarget();
+        }
+        if (target == null && minecraft.getCameraEntity() instanceof AbstractClientPlayer camera
+            && camera != minecraft.player) {
+            target = camera.getUUID();
+        }
+        if (target == null) {
+            return null;
+        }
+
+        for (AbstractClientPlayer candidate : minecraft.level.players()) {
+            if (candidate != minecraft.player && !candidate.isRemoved() && candidate.getUUID().equals(target)) {
+                return candidate;
+            }
         }
         return null;
     }

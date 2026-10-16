@@ -73,7 +73,8 @@ public abstract class MixinGameRenderer {
 
     @WrapOperation(method = "renderItemInHand", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/multiplayer/MultiPlayerGameMode;getPlayerMode()Lnet/minecraft/world/level/GameType;"))
     public GameType getPlayerMode(MultiPlayerGameMode gameMode, Operation<GameType> original) {
-        return Flashback.getSpectatingPlayer() != null ? GameType.SURVIVAL : original.call(gameMode);
+        // The spectator check: a watched replay player is not a spectator, whatever the viewer's own mode is.
+        return Flashback.getWatchedPlayer() != null ? GameType.SURVIVAL : original.call(gameMode);
     }
 
     /**
@@ -88,7 +89,7 @@ public abstract class MixinGameRenderer {
     @WrapOperation(method = "renderItemInHand", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/entity/EntityRenderDispatcher;getPackedLightCoords(Lnet/minecraft/world/entity/Entity;F)I"), require = 0)
     public int renderItemInHand_lightForWatchedPlayer(net.minecraft.client.renderer.entity.EntityRenderDispatcher dispatcher,
             net.minecraft.world.entity.Entity entity, float partialTick, Operation<Integer> original) {
-        AbstractClientPlayer watched = Flashback.getFirstPersonPlayer();
+        AbstractClientPlayer watched = Flashback.getWatchedPlayer();
         return original.call(dispatcher, watched != null ? watched : entity, partialTick);
     }
 
@@ -96,9 +97,14 @@ public abstract class MixinGameRenderer {
     public void renderHandsWithSpectatedPlayer(ItemInHandRenderer renderer, float partialTick, PoseStack poseStack,
                                                MultiBufferSource.BufferSource buffers, LocalPlayer localPlayer, int packedLight,
                                                Operation<Void> original) {
-        AbstractClientPlayer spectatingPlayer = Flashback.getFirstPersonPlayer();
+        AbstractClientPlayer spectatingPlayer = Flashback.getWatchedPlayer();
         if (spectatingPlayer == null) {
-            original.call(renderer, partialTick, poseStack, buffers, localPlayer, packedLight);
+            // No watched player. If the interface is being drawn for one anyway (a spectate camera whose player the
+            // replay has not re-created at this tick), draw no hand rather than the viewer's: the viewer owns nothing
+            // in a replay, so their hand inside somebody else's interface is the desync this is here to avoid.
+            if (!GuiDisplay.showingThroughAPlayer()) {
+                original.call(renderer, partialTick, poseStack, buffers, localPlayer, packedLight);
+            }
             return;
         }
 

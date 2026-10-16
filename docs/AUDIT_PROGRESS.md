@@ -393,3 +393,34 @@ Two separate reasons, both fixed:
 2. **The hand was lit for the wrong place.** Vanilla asks for the light at `minecraft.player` (verified in the 1.21.1 bytecode: `getPackedLightCoords(minecraft.player, partialTick)`), which in a replay is the viewer - in the editor a body sitting wherever the free camera is, very often inside terrain. A tool held in daylight therefore came out black, and against a dark tunnel it looked like nothing was drawn, while the hotbar beside it (drawn from the recorded player) looked correct. `renderItemInHand` now asks for the light at the first-person player.
 Verified in the client with a spectate camera cut on the mining recording: full-resolution screen capture shows the iron pickaxe in the first person view with the hotbar's selected slot matching, and the trace shows `main=1 minecraft:iron_pickaxe`, both hand heights 1.0. The light change could not be shown to differ in that scene - both the viewer and the watched player were in full daylight, `vanilla=15728640 watched=15728640` - so it rests on the bytecode, not on a measurement here. What I could *not* reproduce is the reporter's exact state (a free camera cut with the interface drawn while the camera entity is not a player); the fallback in (1) covers that state by construction, but it is unverified on their recording.
 `devtools/checks` ContainerGuiCheck's method-body extractor now requires a visibility modifier before the name, so a helper that calls another method can no longer be mistaken for that method's declaration; all suites pass.
+
+### CORRECTION: the previous hand "fix" was wrong and has been replaced
+The earlier change in this file (commit 960e037e) added `getFirstPersonPlayer()`, which fell back to the **recorded player**
+whenever the spectating lookup came back null, and used it to choose whose hand to draw. That was a substitution, not a fix:
+a shot can be watching somebody other than the recorded player, and the hand's *animation state* (held item, swing, use)
+then came from one player while the camera and world came from another. That is the desync and the "it just looks wrong".
+Reverted, together with its use in the light lookup.
+
+**The actual defect, found by tracing the cached held item against the watched player's live item:**
+`ItemInHandRenderer` keeps `mainHandItem`/`offHandItem` as cached stacks, maintained in `tick()`, and the render pass draws from
+that cache. The replay has three different notions of "the player" in play within a single frame - the camera entity, which the
+timeline re-points at the cut's camera every tick and which the replay destroys and recreates as it ticks; the viewer's own
+player; and the player the shot is actually of. The tick read the camera entity of the moment, while the render resolved a
+different one, so the cache held the **viewer's** stack - empty - and the render pass drew that empty stack for the watched
+player. Traced, literally: `cachedMain=0 minecraft:air` while `playerMain=1 minecraft:iron_pickaxe`. The hotbar beside it was
+drawn from the recorded player and looked right, which is exactly the reported "hotbar fine, no hand or tool".
+
+**The fix (`Flashback.getWatchedPlayer`):** resolve the player from what holds still - the replay's own intention, the spectate
+target UUID (`ReplayServer.getSpectateTarget()`), falling back to the camera entity for the moment before that has been applied,
+and resolved against the current level so entity replacement does not matter. The same answer is now used by every part of the
+first-person path, so the cache and the render cannot disagree: the hand tick, the hands render, the spectator check that
+decides whether vanilla draws the hand at all, and the light lookup (which vanilla takes at `minecraft.player`, the viewer).
+When there is no watched player, the pass cancels and the hand is not drawn - never the viewer's hand inside somebody else's
+interface.
+Verified in the client on the mining recording:
+- spectate camera cut, played and scrubbed: `cachedMain=1 minecraft:diamond_sword playerMain=1 minecraft:diamond_sword selected=2
+  height=1.0` - cache and player agree, and a full-resolution capture shows the sword in hand with that same hotbar slot selected;
+- the "watch as recorded player" toggle (the control the report's menu showed as active): `cachedMain=playerMain=minecraft:iron_pickaxe
+  selected=0`;
+- free camera: no hand is drawn and the interface is hidden (render count unchanged across four seconds).
+All `devtools/checks` suites pass.
