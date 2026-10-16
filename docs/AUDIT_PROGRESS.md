@@ -327,3 +327,13 @@ and the Version Emulator era the recording was made in - with a note when the em
 Verified in the live editor with a real Alpha 1.2.0 replay: Name Unnamed, World EraBeta, Recorded on 1.21.1, Length 0:25.3, Ticks 507, Markers 0, Version emulator
 `historical_experience:alpha_1_2_0` on its own wrapped line. A new headless suite (`ReplayInfoCheck`, now in `devtools/checks/run.sh`) covers the registration, the menu entry,
 every translation key and the begin/end pairing of the window's three paths; all suites pass.
+
+### Eras: five more recorded and replayed (Beta 1.8.1, Beta 1.9-pre-3, Release 1.2.5, Infdev 611)
+Same pipeline, one era per world:
+- Beta 1.8.1: hunger drumsticks and the XP bar appear for the first time in the sequence (this is the boundary the emulator declares), hearts and armour above.
+- Beta 1.9 Prerelease 3: same HUD, its own corner label ("Minecraft Beta 1.9 Prerelease 3") and crafting panel.
+- Infdev 611: "Minecraft Infdev" label, hearts + armour row, no hunger, no XP, the Alpha-era stack with `golden_days_alpha`.
+- Release 1.2.5: hearts + armour + hunger + XP, Release stack, crafting panel.
+Release 1.2.5's first pass recorded no container at all (the open never happened in that session - visible as an empty `container.state` at record time and four frames with no panel);
+it was re-run and captured the crafting table and chest normally. Lesson: check the record-time `container.state` output, not just the replay.
+Eras with recorded and replayed evidence: 14 of 33 - Alpha 1.0.17, Alpha 1.2.0, Infdev 420, Infdev 611, Beta 1.3, 1.6, 1.7.3, 1.8.1, Beta 1.9-pre-3, Release 1.0.0, 1.1, 1.2.5, 1.5, 1.6.4. The rest differ only in assets/gameplay details from these and are covered by the state/gate check.
