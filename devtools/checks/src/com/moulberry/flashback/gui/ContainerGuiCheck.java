@@ -197,8 +197,11 @@ public class ContainerGuiCheck {
         String recording = Files.readString(root.resolve("com/moulberry/flashback/gui/GuiRecording.java"));
         check("the recording mirrors the container the client has",
             recording.contains("ItemStack.matches") && recording.contains("FlashbackRemoteContainer.slot"));
-        check("only slots the player owns are mirrored, so server-owned slots are not second-guessed",
-            recording.contains("instanceof CraftingContainer") && recording.contains("slot.container != own"));
+        check("every slot is mirrored, but one the server has just described is left alone until the client catches up",
+            recording.contains("SERVER_GRACE_TICKS") && recording.contains("serverTouched")
+                && !recording.contains("slot.container != own"));
+        check("a jump forwards keeps the container that was open across it",
+            Files.readString(root.resolve("com/moulberry/flashback/gui/GuiDisplayForwarder.java")).contains("public static void jump("));
         check("the mirror is told what the server said",
             recording.contains("ClientboundContainerSetSlotPacket")
                 && recording.contains("ClientboundContainerSetContentPacket"));

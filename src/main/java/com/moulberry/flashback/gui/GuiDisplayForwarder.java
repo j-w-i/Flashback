@@ -32,6 +32,67 @@ public final class GuiDisplayForwarder {
      */
     private static int openContainerId = -1;
 
+    /**
+     * What the recording has open right now, kept so that a jump forwards can put it back.
+     *
+     * <p>A jump forwards does not play the packets between where it starts and where it lands, and the
+     * packet that opened a container may well be before the start. Taking the interface down for the jump
+     * (which it must be, since the packet that closes it may be skipped too) therefore lost a container
+     * that was open both before and after - scrubbing forwards inside a chest or an enchanting table made
+     * it vanish, while scrubbing backwards, which plays the opening again, did not. Everything that reaches
+     * the viewer passes through here, so this is always the state at the tick the replay has reached.
+     */
+    private static FlashbackRemoteContainer modelOpen = null;
+    private static List<ItemStack> modelItems = null;
+    private static ItemStack modelCarried = ItemStack.EMPTY;
+    private static FlashbackRemoteContainer modelOffers = null;
+
+    private static void updateModel(FlashbackRemoteContainer payload) {
+        switch (payload.kind()) {
+            case OPEN -> {
+                modelOpen = payload;
+                modelItems = null;
+                modelCarried = ItemStack.EMPTY;
+                modelOffers = null;
+            }
+            case CONTENT -> {
+                if (modelOpen != null && modelOpen.containerId() == payload.containerId()) {
+                    modelItems = copyOf(payload.items());
+                    modelCarried = payload.carried().copy();
+                }
+            }
+            case SLOT -> {
+                if (modelOpen != null && modelOpen.containerId() == payload.containerId() && modelItems != null
+                    && payload.slot() >= 0 && payload.slot() < modelItems.size()) {
+                    modelItems.set(payload.slot(), payload.item().copy());
+                }
+            }
+            case CARRIED -> {
+                if (modelOpen != null && modelOpen.containerId() == payload.containerId()) {
+                    modelCarried = payload.carried().copy();
+                }
+            }
+            case OFFERS -> {
+                if (modelOpen != null && modelOpen.containerId() == payload.containerId()) {
+                    modelOffers = payload;
+                }
+            }
+            case CLOSE -> {
+                if (modelOpen != null && modelOpen.containerId() == payload.containerId()) {
+                    clearModel();
+                }
+            }
+            case RESET -> clearModel();
+        }
+    }
+
+    private static void clearModel() {
+        modelOpen = null;
+        modelItems = null;
+        modelCarried = ItemStack.EMPTY;
+        modelOffers = null;
+    }
+
     private GuiDisplayForwarder() {
     }
 
@@ -108,7 +169,33 @@ public final class GuiDisplayForwarder {
      */
     public static void reset(ReplayServer server) {
         openContainerId = -1;
-        send(server, FlashbackRemoteContainer.reset());
+        clearModel();
+        sendRaw(server, FlashbackRemoteContainer.reset());
+    }
+
+    /**
+     * The replay is jumping in time.
+     *
+     * <p>Backwards, the recording is played again from its start (or its last snapshot), which opens whatever
+     * was open and closes whatever was closed, so everything is cleared and left to be rebuilt. Forwards, the
+     * packets that opened the current container are behind the jump and will not be played, so the interface is
+     * taken down and the same container is put straight back - the packets the jump does play then change it
+     * or close it, which is exactly what they did originally.
+     */
+    public static void jump(ReplayServer server, boolean backwards) {
+        if (backwards || modelOpen == null) {
+            reset(server);
+            return;
+        }
+        sendRaw(server, FlashbackRemoteContainer.reset());
+        openContainerId = modelOpen.containerId();
+        sendRaw(server, modelOpen);
+        if (modelItems != null) {
+            sendRaw(server, FlashbackRemoteContainer.content(modelOpen.containerId(), copyOf(modelItems), modelCarried.copy()));
+        }
+        if (modelOffers != null) {
+            sendRaw(server, modelOffers);
+        }
     }
 
     /** True when the recording says this container is the one on screen. */
@@ -125,6 +212,7 @@ public final class GuiDisplayForwarder {
      * open in step with them.
      */
     public static void observe(FlashbackRemoteContainer container) {
+        updateModel(container);
         switch (container.kind()) {
             case OPEN -> openContainerId = container.containerId();
             case CLOSE -> {
@@ -139,6 +227,11 @@ public final class GuiDisplayForwarder {
     }
 
     private static void send(ReplayServer server, FlashbackRemoteContainer payload) {
+        updateModel(payload);
+        sendRaw(server, payload);
+    }
+
+    private static void sendRaw(ReplayServer server, FlashbackRemoteContainer payload) {
         if (server == null) {
             return;
         }

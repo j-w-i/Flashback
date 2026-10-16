@@ -77,6 +77,20 @@ public final class GuiRecording {
     private static final List<ItemStack> mirrored = new ArrayList<>();
     private static ItemStack mirroredCarried = ItemStack.EMPTY;
 
+    /** Ticks the container screen has been ticking; a clock for {@link #serverTouched}. */
+    private static long screenTicks = 0;
+
+    /**
+     * When the server last described each slot, in {@link #screenTicks}.
+     *
+     * <p>The mirror takes the server's value as the packet is written, which is before the client has applied
+     * it, so for a moment the client's menu still holds the old value and the mirror the new one. Writing the
+     * difference then would put the stale value after the server's own answer. A slot the server has just
+     * spoken about is left alone until the client has had time to catch up.
+     */
+    private static final java.util.Map<Integer, Long> serverTouched = new java.util.HashMap<>();
+    private static final long SERVER_GRACE_TICKS = 4;
+
     private GuiRecording() {
     }
 
@@ -113,10 +127,14 @@ public final class GuiRecording {
             } else if (packet instanceof ClientboundContainerSetSlotPacket slot) {
                 if (slot.getContainerId() == mirroredId && slot.getSlot() >= 0 && slot.getSlot() < mirrored.size()) {
                     mirrored.set(slot.getSlot(), slot.getItem().copy());
+                    serverTouched.put(slot.getSlot(), screenTicks);
                 }
             } else if (packet instanceof ClientboundContainerSetContentPacket content) {
                 if (content.getContainerId() == mirroredId) {
                     fillMirror(content.getItems(), content.getCarriedItem());
+                    for (int i = 0; i < content.getItems().size(); i++) {
+                        serverTouched.put(i, screenTicks);
+                    }
                 }
             }
         } catch (Throwable ignored) {
@@ -174,6 +192,7 @@ public final class GuiRecording {
                 fillMirror(menu.getItems(), menu.getCarried());
             }
 
+            screenTicks++;
             writeDifferences(menu);
         } catch (Throwable t) {
             Flashback.LOGGER.warn("Could not mirror the open container", t);
@@ -181,29 +200,26 @@ public final class GuiRecording {
     }
 
     /**
-     * Writes the crafting grid the client has and the server has not said.
+     * Writes what the client has in any slot of the open container and the server has not said.
      *
-     * <p>Only the slots the player owns. Their crafting grid and their own inventory are filled by
-     * prediction: a click sends the server a hash of what the client now believes, the server files
-     * it as already known, and the slots are never sent. That covers more than the grid - mining is
-     * server-side, but moving what you mined into a crafting grid, and the grid's own contents, are
-     * not, so without this the logs stay in the hotbar for the rest of the recording. A container's
-     * own slots are the server's and it describes its own changes, so writing this side's view of
-     * those would put a guess where the server's answer belongs, which is what a chest looking wrong
-     * was.
-     *
-     * <p>Decided by which container is behind the slot rather than by slot number: a furnace and a
-     * crafting table put the grid in different places, and a hard-coded range would eventually
-     * describe the wrong slot in one of them.
+     * <p>A click sends the server a hash of what the client now believes, the server files it as
+     * already known, and it is never sent - for every slot of every container, not only the player's
+     * own. Moving a sword into an enchanting table, an ingot into a furnace or a stack into a chest is
+     * therefore absent from the packets, and a replay showed the container as empty for as long as the
+     * player had it open. An earlier version limited this to the player's own slots because writing a
+     * container's slots as well made a chest look wrong; the cause was not the slots but the order of
+     * events - the mirror takes a server value before the client applies it, so a tick in between wrote
+     * the stale client value over the server's answer. A slot the server has just described is now left
+     * alone for a few ticks ({@link #SERVER_GRACE_TICKS}) and everything else is written.
      */
     private static void writeDifferences(AbstractContainerMenu menu) {
         Minecraft minecraft = Minecraft.getInstance();
-        Inventory own = minecraft == null || minecraft.player == null ? null : minecraft.player.getInventory();
 
         int slots = Math.min(menu.slots.size(), mirrored.size());
         for (int i = 0; i < slots; i++) {
             Slot slot = menu.getSlot(i);
-            if (own == null || (slot.container != own && !(slot.container instanceof CraftingContainer))) {
+            Long touched = serverTouched.get(i);
+            if (touched != null && screenTicks - touched < SERVER_GRACE_TICKS) {
                 continue;
             }
             ItemStack now = slot.getItem();
@@ -242,6 +258,7 @@ public final class GuiRecording {
     }
 
     private static void forgetMirror() {
+        serverTouched.clear();
         mirroredId = -1;
         mirrored.clear();
         mirroredCarried = ItemStack.EMPTY;

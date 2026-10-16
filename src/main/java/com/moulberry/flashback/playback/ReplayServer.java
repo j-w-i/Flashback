@@ -1036,7 +1036,7 @@ public class ReplayServer extends IntegratedServer {
             // That is why the chest was missing from every exported frame and present while playing.
             boolean skippedTicks = Math.abs(this.targetTick - tickBeforeJump) > 1;
             if (skippedTicks) {
-                GuiDisplayForwarder.reset(this);
+                GuiDisplayForwarder.jump(this, this.targetTick < tickBeforeJump);
                 this.endOfReplayResetSent = false;
             }
 

@@ -293,3 +293,23 @@ Real mouse clicks on the editor's skip-to-start button and on the ruler at five 
 clicked tick and showed the pickaxe in the recorded player's hand, with the attack-cooldown field reading 1.0 (the first-click value at tick 0 was the case that used to hide the hand).
 The earlier "ruler clicks do nothing" observation was mis-aimed clicks (the screen-point to screenshot-pixel factor on this Mac is 1.728), not an editor fault.
 Coordinates that work on this display for `devtools/mac/input` (screen points): window origin (437, 290); skip-to-start button ~(478, 590); ruler y ~596 with 00:00 at x ~706.
+
+### BUGS FIXED: containers vanished when scrubbing forwards, and moves into a container were not in the recording
+Found by recording all 13 remaining container types (enchanting table, anvil, brewing stand, hopper, dispenser, shulker box, smithing table, loom, stonecutter, cartography
+table, grindstone, blast furnace, barrel): live all 13 opened, and the replay drew all 13 with their own screens, titles and contents (e.g. dispenser items, shulker diamonds,
+barrel emerald, hopper golden apple) - when jumped into directly. Then an enchanting session with real clicks exposed two separate faults:
+1. **Forward jumps dropped an open container.** Any jump over more than one tick tore the interface down (`GuiDisplayForwarder.reset`) because the packet that closes it
+   may be skipped - but the packet that *opened* it is skipped as well when it lies before the start of the jump, so a container open both before and after the jump was gone
+   (scrub 150 -> 300 inside a 220-tick window: panel gone; 300 -> 150 backwards: fine). Fix: the forwarder now keeps a model of the open container (open payload, contents,
+   cursor, merchant offers), updated from everything that reaches the viewer; a forward jump re-sends that model after the reset, a backward jump clears it as before (the
+   replay re-opens it by playing the recording again). Verified: 13/13 containers shown when jumping straight into each, and the enchanting container is on screen at
+   ticks 150, 300, 310, 500, 1000 and 1200 of a 1409-tick clip and gone before it opens and after it closes.
+2. **Items moved into a container by the player were never recorded.** A click sends the server a hash of what the client now believes and the server files it as known, so
+   it is never sent back - for every slot of every container, not just the player's own. Recording only the player's own slots (an earlier decision, made to stop a stale client
+   value overwriting a server answer) left the sword and lapis out of the enchanting table: the replay showed an empty table all through the session. The cause of the
+   earlier chest problem was ordering (the mirror takes the server's value before the client applies it), not which slots were mirrored, so every slot is mirrored again and a slot the
+   server has just described is skipped for 4 ticks. Verified with a fresh enchanting recording (sword and lapis appear in the table, lapis 10 -> 8 after enchanting, the sword
+   leaves the hotbar) and a chest recording with six different moves (single stack, shift-click, right-click split, hotbar -> chest) whose replay shows each move at the
+   right moment and the same final layout as the live chest (cobblestone slot 5, diamonds 12, emeralds 20, sword and golden apples in the player inventory).
+`devtools/checks` ContainerGuiCheck updated to the new rule and a check that the forward-jump restore exists; all suites pass.
+Test-tool lesson: a panel-colour detector on 4-pixel steps is reliable for "a container is on screen"; the earlier false negatives were this seek bug, not the detector.
