@@ -207,7 +207,7 @@ public class CameraPath {
                     renderCamera(bufferBuilder, handler.position.add(offset, new Vector3d()), handler.angle, fovHandler.fov,
                         getCameraColour(false, false), 0.6f);
                 }
-                renderPath(bufferBuilder, args.lastLastCameraTick, args.lastCameraTick, state, offset, handler, 0.6f);
+                renderPath(bufferBuilder, args.lastLastCameraTick, args.lastCameraTick, state, offset, handler, fovHandler, 0.6f);
             }
         }
 
@@ -230,12 +230,12 @@ public class CameraPath {
                     renderCamera(bufferBuilder, handler.position.add(offset, new Vector3d()), handler.angle, fovHandler.fov,
                         getCameraColour(false, false), 0.6f);
                 }
-                renderPath(bufferBuilder, args.nextCameraTick, args.nextNextCameraTick, state, offset, handler, 0.6f);
+                renderPath(bufferBuilder, args.nextCameraTick, args.nextNextCameraTick, state, offset, handler, fovHandler, 0.6f);
             }
         }
 
         if (args.lastCameraTick != -1 && args.nextCameraTick != -1) {
-            renderPath(bufferBuilder, args.lastCameraTick, args.nextCameraTick, state, offset, handler, 1.0f);
+            renderPath(bufferBuilder, args.lastCameraTick, args.nextCameraTick, state, offset, handler, fovHandler, 1.0f);
         }
     }
 
@@ -249,11 +249,17 @@ public class CameraPath {
         }
     }
 
-    private static void renderPath(BufferBuilder bufferBuilder, int fromTick, int toTick,
-            EditorState editorState, Vector3d offset, CapturingKeyframeHandler handler, float opacity) {
+    private static void renderPath(BufferBuilder bufferBuilder, int fromTick, int toTick, EditorState editorState,
+            Vector3d offset, CapturingKeyframeHandler handler, FovCapturingKeyframeHandler fovHandler, float opacity) {
         Vector3d lastPosition = null;
 
         int step = (toTick - fromTick) / 2000 + 1;
+
+        // How often a camera object is drawn along the path. The camera between two keyframes is not at either
+        // of them: it is interpolated, and so is its rotation, so the objects have to be sampled along the path
+        // rather than only standing at the keyframes. One every 32nd of the segment keeps that readable.
+        int frustumStep = Math.max(step, Math.max(1, (toTick - fromTick) / 32));
+        float defaultFov = Minecraft.getInstance().options.fov().get();
 
         for (int tick = fromTick; tick <= toTick; tick += step) {
             editorState.applyKeyframes(handler, tick);
@@ -283,6 +289,15 @@ public class CameraPath {
             }
 
             lastPosition = position;
+
+            if (tick == toTick || (tick - fromTick) % frustumStep == 0) {
+                // The rotation and field of view the camera actually has at this moment, captured from the
+                // same interpolation the camera itself uses.
+                fovHandler.fov = defaultFov;
+                editorState.applyKeyframes(fovHandler, tick);
+                renderCamera(bufferBuilder, position, handler.angle, fovHandler.fov,
+                    getCameraColour(false, false), 0.35f * opacity);
+            }
         }
     }
 
