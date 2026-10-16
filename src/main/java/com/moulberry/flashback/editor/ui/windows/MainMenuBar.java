@@ -126,6 +126,9 @@ public class MainMenuBar {
         if (ImGui.menuItem(I18n.get("flashback.keybinds") + "##Keybinds")) {
             WindowType.KEYBINDS.toggle();
         }
+        if (ImGui.menuItem(I18n.get("flashback.replay_info") + "##ReplayInfo")) {
+            WindowType.REPLAY_INFO.toggle();
+        }
 
         ImGui.separator();
 

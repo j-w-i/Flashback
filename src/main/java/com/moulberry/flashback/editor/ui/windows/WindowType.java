@@ -12,7 +12,8 @@ public enum WindowType {
     PLAYER_LIST("player_list", PlayerListWindow::render),
     MOVEMENT("movement", MovementWindow::render),
     RENDER_FILTER("render_filter", RenderFilterWindow::render),
-    KEYBINDS("keybinds", KeybindsWindow::render);
+    KEYBINDS("keybinds", KeybindsWindow::render),
+    REPLAY_INFO("replay_info", ReplayInfoWindow::render);
 
     private final String windowId;
     private final ImGuiWindowRenderer renderMethod;

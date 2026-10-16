@@ -207,6 +207,10 @@ public final class FlashbackDevCommands {
                 return reply(ctx.getSource(), error(String.valueOf(t)));
             }
         }));
+        dev.then(ClientCommandManager.literal("replayinfo").executes(ctx -> {
+            com.moulberry.flashback.editor.ui.windows.WindowType.REPLAY_INFO.toggle();
+            return reply(ctx.getSource(), ok("replay info window toggled"));
+        }));
         dev.then(ClientCommandManager.literal("exportwindow").executes(ctx -> {
             if (EditorStateManager.getCurrent() == null) return reply(ctx.getSource(), error("not in a replay editor"));
             com.moulberry.flashback.editor.ui.windows.StartExportWindow.open();

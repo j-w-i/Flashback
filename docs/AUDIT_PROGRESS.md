@@ -313,3 +313,17 @@ barrel emerald, hopper golden apple) - when jumped into directly. Then an enchan
    right moment and the same final layout as the live chest (cobblestone slot 5, diamonds 12, emeralds 20, sword and golden apples in the player inventory).
 `devtools/checks` ContainerGuiCheck updated to the new rule and a check that the forward-jump restore exists; all suites pass.
 Test-tool lesson: a panel-colour detector on 4-pixel steps is reliable for "a container is on screen"; the earlier false negatives were this seek bug, not the detector.
+
+### Eras: three more recorded and replayed (Alpha 1.2.0, Beta 1.6, Release 1.1)
+Same pipeline (upgrade the test world with `/hex upgrade <version>`, exit, relaunch, record the standard session, exit, open the replay from a modern world):
+- Alpha 1.2.0: "Minecraft Alpha v1.2.0" label, hearts with the armour row to the right, no hunger, no XP, Alpha textures and the Alpha crafting panel.
+- Beta 1.6: "Minecraft Beta 1.6" label, hearts + armour row, no hunger, no XP, Beta stack.
+- Release 1.1: hearts + armour above, hunger drumsticks, XP bar, Release stack.
+Eras with recorded and replayed evidence now number ten: Alpha 1.0.17, Alpha 1.2.0, Infdev 420, Beta 1.3, Beta 1.6, Beta 1.7.3, Release 1.0.0, 1.1, 1.5, 1.6.4. The remaining 23 versions are covered only by the earlier state/gate check.
+
+### Editor UI: a Replay Info window
+The editor never said which recording was open. New window (menu after Keybinds, `/flashback dev replayinfo` for the harness): Name, World, Recorded on, Length (as a clock), Ticks, Markers,
+and the Version Emulator era the recording was made in - with a note when the emulator is not installed to present it, and when the recording predates the emulator.
+Verified in the live editor with a real Alpha 1.2.0 replay: Name Unnamed, World EraBeta, Recorded on 1.21.1, Length 0:25.3, Ticks 507, Markers 0, Version emulator
+`historical_experience:alpha_1_2_0` on its own wrapped line. A new headless suite (`ReplayInfoCheck`, now in `devtools/checks/run.sh`) covers the registration, the menu entry,
+every translation key and the begin/end pairing of the window's three paths; all suites pass.
