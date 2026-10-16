@@ -238,7 +238,9 @@ public abstract class MixinHud {
                 cir.setReturnValue(true);
                 return;
             }
-            cir.setReturnValue(Flashback.getSpectatingPlayer() != null);
+            // The crosshair belongs to the interface, which is drawn for the watched player; asking the same
+            // question keeps the two from disagreeing on the frames where the camera entity is not the player.
+            cir.setReturnValue(Flashback.getWatchedPlayer() != null);
         }
     }
 

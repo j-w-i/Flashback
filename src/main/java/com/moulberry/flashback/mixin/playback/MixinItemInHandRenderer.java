@@ -114,27 +114,27 @@ public abstract class MixinItemInHandRenderer implements ItemInHandRendererExt {
 
     @ModifyArg(method = "renderPlayerArm", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/entity/EntityRenderDispatcher;getRenderer(Lnet/minecraft/world/entity/Entity;)Lnet/minecraft/client/renderer/entity/EntityRenderer;"))
     public Entity renderPlayerArm_getRenderer(Entity entity) {
-        AbstractClientPlayer spectatingPlayer = Flashback.getSpectatingPlayer();
-        if (spectatingPlayer != null) {
-            return spectatingPlayer;
+        AbstractClientPlayer watched = Flashback.getWatchedPlayer();
+        if (watched != null) {
+            return watched;
         }
         return entity;
     }
 
     @ModifyArg(method = "renderPlayerArm", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/entity/player/PlayerRenderer;renderLeftHand(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/client/player/AbstractClientPlayer;)V"))
     public AbstractClientPlayer renderPlayerArm_renderLeftHand(AbstractClientPlayer entity) {
-        AbstractClientPlayer spectatingPlayer = Flashback.getSpectatingPlayer();
-        if (spectatingPlayer != null) {
-            return spectatingPlayer;
+        AbstractClientPlayer watched = Flashback.getWatchedPlayer();
+        if (watched != null) {
+            return watched;
         }
         return entity;
     }
 
     @ModifyArg(method = "renderPlayerArm", at = @At(value = "INVOKE", target = "Lnet/minecraft/client/renderer/entity/player/PlayerRenderer;renderRightHand(Lcom/mojang/blaze3d/vertex/PoseStack;Lnet/minecraft/client/renderer/MultiBufferSource;ILnet/minecraft/client/player/AbstractClientPlayer;)V"))
     public AbstractClientPlayer renderPlayerArm_renderRightHand(AbstractClientPlayer entity) {
-        AbstractClientPlayer spectatingPlayer = Flashback.getSpectatingPlayer();
-        if (spectatingPlayer != null) {
-            return spectatingPlayer;
+        AbstractClientPlayer watched = Flashback.getWatchedPlayer();
+        if (watched != null) {
+            return watched;
         }
         return entity;
     }

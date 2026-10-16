@@ -424,3 +424,12 @@ Verified in the client on the mining recording:
   selected=0`;
 - free camera: no hand is drawn and the interface is hidden (render count unchanged across four seconds).
 All `devtools/checks` suites pass.
+
+### Same correction applied to the rest of the first-person path
+The three `renderPlayerArm` redirects in `MixinItemInHandRenderer` (the renderer used for the bare arm, and the left/right
+hand draws) still resolved their player from the camera entity, so an arm could be drawn for one player while the item
+beside it came from another - the same mismatch in a different place. They now use `getWatchedPlayer()`. The spectator
+crosshair check in `MixinHud` now asks the same question the interface does, so it cannot disagree with the HUD on the
+frames where the camera entity is not the player.
+Left as-is deliberately: `MixinEntity.isInvisibleTo` and the display command keep `getSpectatingPlayer()`, because there the
+question really is "where is the camera looking", which is what that method answers.
