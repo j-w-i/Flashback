@@ -90,6 +90,7 @@ run_check "ImGuiPairingCheck" com.moulberry.flashback.ImGuiPairingCheck \
     src/main/java/com/moulberry/flashback/editor/ui/windows/ReplayInfoWindow.java
 run_check "ContainerGuiCheck" com.moulberry.flashback.gui.ContainerGuiCheck src/main/java
 run_check "ReplayInfoCheck" com.moulberry.flashback.editor.ReplayInfoCheck src/main/java
+run_check "TimelineSeekThrottleCheck" com.moulberry.flashback.editor.TimelineSeekThrottleCheck src/main/java
 run_check "MixinTargetCheck" com.moulberry.flashback.MixinTargetCheck src/main/java
 
 if ! bash devtools/checks/run-replay-inventory.sh; then

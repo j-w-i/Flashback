@@ -144,6 +144,17 @@ public class TimelineWindow {
     @Nullable
     private static Drag drag;
 
+    /**
+     * The playhead position a drag has asked for but the replay has not taken yet, or -1.
+     *
+     * <p>Held here rather than sent, so a drag cannot queue work: see {@link #seekDuringDrag}.
+     */
+    private static int pendingSeekTick = -1;
+
+    /** Which replay the pending seek belongs to, so it cannot leak into another one. */
+    @Nullable
+    private static java.util.UUID lastReplayIdentifier;
+
     /** Intents raised by input this frame and carried out while drawing. */
     @Nullable
     private static TimelineSelection.Ref pendingInspector;
@@ -637,6 +648,13 @@ public class TimelineWindow {
 
         FlashbackMeta metadata = replayServer.getMetadata();
         editorState = EditorStateManager.get(metadata.replayIdentifier);
+
+        // A different replay is a different timeline: a position pending from the last one means nothing here.
+        if (lastReplayIdentifier == null || !lastReplayIdentifier.equals(metadata.replayIdentifier)) {
+            lastReplayIdentifier = metadata.replayIdentifier;
+            pendingSeekTick = -1;
+            drag = null;
+        }
 
         String title = I18n.get("flashback.timeline_window", ticksToTimestamp(cursorTicks), cursorTicks);
         ImGuiHelper.pushStyleVar(ImGuiStyleVar.WindowPadding, 0, 0);
@@ -2337,6 +2355,9 @@ public class TimelineWindow {
             return;
         }
 
+        // A drag that has ended leaves its last position pending, to be taken once the replay is free.
+        flushPendingSeek(f);
+
         boolean left = ImGui.isMouseClicked(ImGuiMouseButton.Left);
         boolean right = ImGui.isMouseClicked(ImGuiMouseButton.Right);
         boolean middle = ImGui.isMouseClicked(ImGuiMouseButton.Middle);
@@ -2913,7 +2934,7 @@ public class TimelineWindow {
         switch (drag) {
             case Drag.Head ignored -> {
                 f.replayServer.replayPaused = true;
-                seek(f, snapTick(f, f.tickAtX(f.mouseX)));
+                seekDuringDrag(f, snapTick(f, f.tickAtX(f.mouseX)));
             }
             case Drag.Keys keys -> {
                 if (!keys.moved && (Math.abs(f.mouseX - keys.anchorX) > 2 || Math.abs(f.mouseY - keys.anchorY) > 2)) {
@@ -3031,6 +3052,13 @@ public class TimelineWindow {
     private static void finishDrag(Frame f) {
         Drag finished = drag;
         drag = null;
+
+        if (finished instanceof Drag.Head) {
+            // The drag's final position may still be pending, since the live picture is only asked for a few
+            // times a second. Ask for it now, so the playhead ends exactly where the pointer was let go.
+            lastDragSeekNanos = 0;
+            flushPendingSeek(f);
+        }
 
         if (finished instanceof Drag.Keys keys) {
             if (keys.moved) {
@@ -3343,6 +3371,51 @@ public class TimelineWindow {
             f.replayServer.goToReplayTick(target);
         }
         f.replayServer.forceApplyKeyframes.set(true);
+    }
+
+    /**
+     * A seek asked for by a drag, which asks for one on every frame the pointer moves.
+     *
+     * <p>Each seek is not a small thing: going backwards rewinds the replay to the start of the chunk the
+     * target is in and plays it forward again, and a chunk is five minutes of recording
+     * ({@code Recorder.CHUNK_LENGTH_SECONDS}). Measured on a 90-second replay, one backwards seek costs the
+     * server thread 13-29 ms, and on a long or busy recording it is far more. Asked for once per frame, the
+     * replay spends the whole drag servicing positions nobody will look at, and pressing play then waits for
+     * whatever is in flight - which is what "it queues up what you would have watched" looks like.
+     *
+     * <p>So a drag does not ask for a position while the replay is still taking the last one. The newest
+     * position is held and asked for as soon as the replay is free, which is at most one seek behind the
+     * pointer and never a queue of them. Releasing the pointer leaves the last position pending, and
+     * {@link #flushPendingSeek} issues it on the next frame.
+     */
+    private static void seekDuringDrag(Frame f, int tick) {
+        pendingSeekTick = Math.max(0, Math.min(f.totalTicks, tick));
+        f.replayServer.forceApplyKeyframes.set(true);
+        // A live frame while scrubbing is worth having, but not sixty times a second: the pointer moves every
+        // frame and each seek costs the replay a rewind, so the picture is asked for a few times a second and
+        // the position the pointer is actually left on is asked for at once when the drag ends.
+        long now = System.nanoTime();
+        if (now - lastDragSeekNanos < DRAG_SEEK_INTERVAL_NANOS) {
+            return;
+        }
+        lastDragSeekNanos = now;
+        flushPendingSeek(f);
+    }
+
+    /** How often a drag asks the replay for a new position, and so how often the picture follows the pointer. */
+    private static final long DRAG_SEEK_INTERVAL_NANOS = 150_000_000L;
+    private static long lastDragSeekNanos = 0;
+
+    /** Issues the pending drag seek, if there is one and the replay is not already taking another. */
+    private static void flushPendingSeek(Frame f) {
+        if (pendingSeekTick < 0 || f.replayServer.jumpToTick >= 0 || f.replayServer.fastForwarding) {
+            return;
+        }
+        int target = pendingSeekTick;
+        pendingSeekTick = -1;
+        if (f.replayServer.jumpToTick != target) {
+            f.replayServer.goToReplayTick(target);
+        }
     }
 
     private static void handleScroll(Frame f) {
