@@ -287,3 +287,9 @@ field and screenshots: tick 0, 1, 2, 3 paused after seeks all show the sword; ra
 the pickaxe visible and swinging while breaking stone, and the swap to the sword at the end appears. New dev status fields: `spectatedAttackScale`, `spectatedMainHand`.
 Build environment settled: JDK 21 (Temurin) installed under `~/Library/Java/JavaVirtualMachines` and registered in `~/.gradle/gradle.properties`, so the emulator's
 `java.toolchain` pin builds unmodified and its working tree is clean (no local edits left). Run gradle with `sh ./gradlew` (the emulator's wrapper is not executable).
+
+### Hand fix confirmed through the real timeline UI
+Real mouse clicks on the editor's skip-to-start button and on the ruler at five positions (ticks 28, 50, 114, 167, 247 of a mining recording) each landed on the
+clicked tick and showed the pickaxe in the recorded player's hand, with the attack-cooldown field reading 1.0 (the first-click value at tick 0 was the case that used to hide the hand).
+The earlier "ruler clicks do nothing" observation was mis-aimed clicks (the screen-point to screenshot-pixel factor on this Mac is 1.728), not an editor fault.
+Coordinates that work on this display for `devtools/mac/input` (screen points): window origin (437, 290); skip-to-start button ~(478, 590); ruler y ~596 with 00:00 at x ~706.
